@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { requireAuth } from "./lib/auth";
 import { importRoutes } from "./routes/imports";
+import { agentRoutes } from "./routes/agent";
 import { vapiWebhooks } from "./routes/webhooks/vapi";
 import { telnyxWebhooks } from "./routes/webhooks/telnyx";
 import { supabaseAdmin } from "./lib/supabase";
@@ -36,6 +37,8 @@ app.get("/u/:customerId", async (c) => {
 // ── Authenticated dashboard API (companyId/userId from context, never the body) ──
 app.use("/imports/*", requireAuth);
 app.route("/imports", importRoutes);
+app.use("/agent/*", requireAuth);
+app.route("/agent", agentRoutes);
 
 const port = Number(process.env.PORT ?? 3000);
 const server = serve({ fetch: app.fetch, port }, () => console.log(`api listening on :${port}`));
