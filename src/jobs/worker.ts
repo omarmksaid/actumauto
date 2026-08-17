@@ -14,6 +14,7 @@ import { registerMessageDispatch } from "../dispatch/message";
 import { registerEventProcessor } from "../dispatch/events";
 import { reconcile } from "../dispatch/reconciler";
 import { runNumberHealth } from "../numbers/job";
+import { registerSlotJob } from "../scheduling/slotJob";
 
 let started = false;
 
@@ -28,6 +29,7 @@ export async function startWorker() {
   await registerDispatch(boss);
   await registerMessageDispatch(boss);
   await registerEventProcessor(boss);
+  await registerSlotJob(boss);
 
   // Reconciler cron (§4c) — dedup backstop, every 5 min.
   await boss.work("reconcile", async () => { await reconcile(); });

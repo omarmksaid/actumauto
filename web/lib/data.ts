@@ -76,6 +76,16 @@ export const demoDirectory = [
   { customer_id: "cust1", full_name: "Maria Chen", phone: "+14085550142", email: "maria@example.com", customer_type: "loyal", vehicle_count: 2 },
   { customer_id: "cust2", full_name: "Devon Park", phone: "+14085550199", email: "devon@example.com", customer_type: "lapsed", vehicle_count: 1 },
 ];
+// ── Campaigns ──  apiCall("/campaigns")  /  apiCall("/campaigns/:id")
+export const demoCampaigns = [
+  { id: "camp1", name: "Q3 lapsed owners", status: "active", import_id: "demo-1", pacing: { window_days: 30, last_slot: { touchpointsCreated: 214, vehiclesDue: 251 } }, created_at: "2026-08-15T14:00:00Z" },
+  { id: "camp2", name: "New RAV4 first-service", status: "draft", import_id: null, pacing: { window_days: 21 }, created_at: "2026-08-16T09:00:00Z" },
+];
+export const demoCampaignDetail = {
+  campaign: demoCampaigns[0],
+  progress: { total: 214, scheduled: 108, in_flight: 6, completed: 100, booked: 34, canceled: 0 },
+};
+
 // ── Settings ──  apiCall("/settings")  /  apiCall("/settings/numbers")
 export const demoSettings = {
   cadence: {
