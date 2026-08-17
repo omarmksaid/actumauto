@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { createClient, isDemo } from "@/lib/supabase";
 
 // Slice 1 ships Imports; the rest are placeholders that arrive in later slices (PLAN.md §6/§10).
 const NAV = [
@@ -17,6 +18,14 @@ const NAV = [
 
 export function Nav() {
   const path = usePathname();
+  const router = useRouter();
+
+  async function signOut() {
+    if (isDemo) return;
+    await createClient().auth.signOut();
+    router.replace("/login");
+  }
+
   return (
     <nav className="sidebar">
       <div className="brand">Touchpoint <em>Center</em></div>
@@ -28,6 +37,11 @@ export function Nav() {
           </Link>
         );
       })}
+      <div style={{ marginTop: "auto", paddingTop: 16 }}>
+        <button className="nav-item" style={{ width: "100%", textAlign: "left", cursor: "pointer", background: "none", border: "none", font: "inherit" }} onClick={signOut}>
+          Sign out
+        </button>
+      </div>
     </nav>
   );
 }

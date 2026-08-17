@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
-// Slice 1: land straight on Imports (the working vertical slice). A marketing/login
-// front door arrives with the auth slice.
+// Land on Today. In demo mode the (app) guard is a no-op; otherwise it redirects to /login
+// when there's no session.
 export default function Home() {
-  redirect("/imports");
+  redirect("/today");
 }
