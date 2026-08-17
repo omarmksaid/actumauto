@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { requireAuth } from "./lib/auth";
 import { importRoutes } from "./routes/imports";
+import { vapiWebhooks } from "./routes/webhooks/vapi";
 import { startWorker, stopWorker } from "./jobs/worker";
 
 const app = new Hono();
@@ -15,11 +16,12 @@ app.use("/*", cors({
 
 app.get("/health", (c) => c.json({ ok: true }));
 
+// ── Webhooks (provider-authenticated, NOT requireAuth) ──
+app.route("/webhooks", vapiWebhooks);   // /webhooks/vapi (thin durable handler, §5b)
+
 // ── Authenticated dashboard API (companyId/userId from context, never the body) ──
 app.use("/imports/*", requireAuth);
 app.route("/imports", importRoutes);
-
-// Webhook routes (Vapi/Telnyx/myKaarma) — provider-authenticated — land in later slices.
 
 const port = Number(process.env.PORT ?? 3000);
 const server = serve({ fetch: app.fetch, port }, () => console.log(`api listening on :${port}`));
