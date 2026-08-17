@@ -13,6 +13,7 @@ import { registerDispatch } from "../dispatch/dispatch";
 import { registerMessageDispatch } from "../dispatch/message";
 import { registerEventProcessor } from "../dispatch/events";
 import { reconcile } from "../dispatch/reconciler";
+import { runNumberHealth } from "../numbers/job";
 
 let started = false;
 
@@ -31,6 +32,12 @@ export async function startWorker() {
   // Reconciler cron (§4c) — dedup backstop, every 5 min.
   await boss.work("reconcile", async () => { await reconcile(); });
   await boss.schedule("reconcile", "*/5 * * * *");
+
+  // Number-health cron (§2) — answer-rate decay + ramp/reset, a few times a day.
+  await boss.work("number-health", async () => {
+    await runNumberHealth(new Date().toISOString());
+  });
+  await boss.schedule("number-health", "0 */6 * * *");
 
   // Scheduler tick — claims due touchpoints and enqueues dispatch. FOR UPDATE SKIP LOCKED via RPC
   // (claim_due_touchpoints) so concurrent scheduler instances never grab the same row (§4b).

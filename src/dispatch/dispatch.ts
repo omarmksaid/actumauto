@@ -13,6 +13,7 @@ import { preDialGate } from "./gate";
 import { buildSystemPrompt, buildFirstMessage, DueVehicleForPrompt } from "./prompt";
 import { placeVapiCall } from "./vapi";
 import { getBookingProvider } from "../booking";
+import { rampCap } from "../numbers/health";
 
 interface DispatchJob { touchpointId: string; }
 
@@ -156,14 +157,18 @@ async function revert(id: string, status: string, extra: Record<string, unknown>
 async function pickNumber(companyId: string) {
   const { data } = await supabaseAdmin
     .from("phone_numbers")
-    .select("id, vapi_phone_id, weight, daily_cap, sent_today, quarantined_at")
+    .select("id, vapi_phone_id, weight, daily_cap, sent_today, quarantined_at, ramp_started_on")
     .eq("company_id", companyId).eq("enabled", true).is("quarantined_at", null)
     .not("vapi_phone_id", "is", null);
-  const usable = (data ?? []).filter((n) => (n.sent_today ?? 0) < (n.daily_cap ?? 400));
+  const today = new Date().toISOString().slice(0, 10);
+  // Respect the WARM-UP RAMP: effective cap is min(daily_cap, ramp_cap(today)) so unwarmed
+  // numbers don't blow past their ramp and get flagged (§2).
+  const usable = (data ?? [])
+    .map((n) => ({ ...n, cap: rampCap(n.ramp_started_on, n.daily_cap ?? 400, today) }))
+    .filter((n) => (n.sent_today ?? 0) < n.cap);
   if (!usable.length) return null;
   // Weighted pick, favoring lower utilization.
-  usable.sort((a, b) =>
-    (a.sent_today ?? 0) / (a.daily_cap ?? 400) - (b.sent_today ?? 0) / (b.daily_cap ?? 400));
+  usable.sort((a, b) => (a.sent_today ?? 0) / a.cap - (b.sent_today ?? 0) / b.cap);
   return usable[0];
 }
 

@@ -76,6 +76,25 @@ export const demoDirectory = [
   { customer_id: "cust1", full_name: "Maria Chen", phone: "+14085550142", email: "maria@example.com", customer_type: "loyal", vehicle_count: 2 },
   { customer_id: "cust2", full_name: "Devon Park", phone: "+14085550199", email: "devon@example.com", customer_type: "lapsed", vehicle_count: 1 },
 ];
+// ── Settings ──  apiCall("/settings")  /  apiCall("/settings/numbers")
+export const demoSettings = {
+  cadence: {
+    no_answer_retry_after_min: 1440, max_call_attempts: 2,
+    sms_fallback_after_min: 120, email_fallback_after_min: 240,
+    reminder_offsets_min: [1440, 120],
+    on_machine: "drop_message", voicemail_counts_as_attempt: false, voicemail_sms_immediate: true,
+    quiet_start: "20:00", quiet_end: "09:00",
+  },
+  company: { name: "Milpitas Toyota", timezone: "America/Los_Angeles" },
+  voice: { provider: "cartesia", voice_id: "sonic-english" },
+  persona_prompt: "You are a friendly, concise service-reminder assistant for Milpitas Toyota's service department. Warm, respectful of their time, never pushy.",
+  customer_types: ["loyal", "lapsed", "new", "vip"],
+};
+export const demoNumbers = [
+  { id: "n1", e164: "+14085550110", provider: "telnyx", enabled: true, weight: 1, daily_cap: 400, sent_today: 180, effective_cap_today: 400, ramp_started_on: "2026-07-20", answer_rate_7d: 0.44, health_score: 0.9, quarantined_at: null, cnam: "Milpitas Toyota" },
+  { id: "n2", e164: "+14085550111", provider: "telnyx", enabled: true, weight: 1, daily_cap: 400, sent_today: 40, effective_cap_today: 150, ramp_started_on: "2026-08-10", answer_rate_7d: 0.29, health_score: 0.6, quarantined_at: null, cnam: "Milpitas Toyota" },
+];
+
 export const demoCustomer = {
   customer: { id: "cust1", full_name: "Maria Chen", phone: "+14085550142", email: "maria@example.com", customer_type: "loyal", tags: ["repeat", "prefers-text"], detected_language: "en", personality: { summary: "Friendly, direct, values quick answers. Prefers texts over calls." }, notes: "", opted_out: false, do_not_contact: false },
   vehicles: [

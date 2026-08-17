@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import { requireAuth } from "./lib/auth";
 import { importRoutes } from "./routes/imports";
 import { agentRoutes } from "./routes/agent";
+import { settingsRoutes } from "./routes/settings";
 import { vapiWebhooks } from "./routes/webhooks/vapi";
 import { telnyxWebhooks } from "./routes/webhooks/telnyx";
 import { supabaseAdmin } from "./lib/supabase";
@@ -39,6 +40,8 @@ app.use("/imports/*", requireAuth);
 app.route("/imports", importRoutes);
 app.use("/agent/*", requireAuth);
 app.route("/agent", agentRoutes);
+app.use("/settings/*", requireAuth);
+app.route("/settings", settingsRoutes);
 
 const port = Number(process.env.PORT ?? 3000);
 const server = serve({ fetch: app.fetch, port }, () => console.log(`api listening on :${port}`));
