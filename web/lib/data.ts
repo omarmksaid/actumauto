@@ -76,6 +76,17 @@ export const demoDirectory = [
   { customer_id: "cust1", full_name: "Maria Chen", phone: "+14085550142", email: "maria@example.com", customer_type: "loyal", vehicle_count: 2 },
   { customer_id: "cust2", full_name: "Devon Park", phone: "+14085550199", email: "devon@example.com", customer_type: "lapsed", vehicle_count: 1 },
 ];
+// ── Team ──  apiCall("/team")
+export const demoTeam = {
+  members: [
+    { user_id: "u1", email: "owner@milpitastoyota.com", role: "owner", phone: null },
+    { user_id: "u2", email: "advisor.jen@milpitastoyota.com", role: "advisor", phone: "+14085550170" },
+  ],
+  invites: [
+    { email: "newhire@milpitastoyota.com", role: "advisor", expires_at: "2026-08-23T00:00:00Z", accepted_at: null },
+  ],
+};
+
 // ── Campaigns ──  apiCall("/campaigns")  /  apiCall("/campaigns/:id")
 export const demoCampaigns = [
   { id: "camp1", name: "Q3 lapsed owners", status: "active", import_id: "demo-1", pacing: { window_days: 30, last_slot: { touchpointsCreated: 214, vehiclesDue: 251 } }, created_at: "2026-08-15T14:00:00Z" },

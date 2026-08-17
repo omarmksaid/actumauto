@@ -6,6 +6,7 @@ import { importRoutes } from "./routes/imports";
 import { agentRoutes } from "./routes/agent";
 import { settingsRoutes } from "./routes/settings";
 import { campaignRoutes } from "./routes/campaigns";
+import { teamRoutes, acceptInvite, lookupInvite } from "./routes/team";
 import { vapiWebhooks } from "./routes/webhooks/vapi";
 import { telnyxWebhooks } from "./routes/webhooks/telnyx";
 import { supabaseAdmin } from "./lib/supabase";
@@ -45,6 +46,12 @@ app.use("/settings/*", requireAuth);
 app.route("/settings", settingsRoutes);
 app.use("/campaigns/*", requireAuth);
 app.route("/campaigns", campaignRoutes);
+
+// Team: accept/lookup are public (pre-membership); the rest require auth.
+app.get("/team/invite", lookupInvite);   // token → the email it was issued to
+app.post("/team/accept", acceptInvite);   // JWT-verified but pre-membership
+app.use("/team/*", requireAuth);
+app.route("/team", teamRoutes);
 
 const port = Number(process.env.PORT ?? 3000);
 const server = serve({ fetch: app.fetch, port }, () => console.log(`api listening on :${port}`));

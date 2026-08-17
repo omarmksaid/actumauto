@@ -24,6 +24,7 @@ Ordered by dependency + lead time. See `PLAN.md` for the why behind each choice.
 3. **Run the migrations** in order, then the seed, in the SQL Editor (or `psql`):
    - `supabase/migrations/0001_init.sql`
    - `supabase/migrations/0002_dispatch_rpcs.sql`
+   - `supabase/migrations/0003_invite_expiry.sql`  (team invites need `invites.expires_at`)
    - `supabase/seed.example.sql`  (buckets, `create_workspace` RPC, global Toyota schedule)
 4. Grab these from **Project Settings**:
    - **Project URL** → `SUPABASE_URL` and (web) `NEXT_PUBLIC_SUPABASE_URL`
@@ -150,7 +151,11 @@ reconciler · cadence engine (voicemail/no-answer/booked/opt-out) · soft bookin
 email (Resend) senders** behind the same claim/confirm dispatch · Telnyx status/inbound-STOP webhook ·
 `/u/:customerId` unsubscribe (atomic opt-out).
 
-**Not yet wired:** funnel dashboard + call playback + Customer Directory UI · Insights/
-conversation-intelligence (`call_analyses`) · number warm-up ramp + answer-rate health job · real
-myKaarma adapter · RO/shown re-import loop · appointment reminder scheduling (booked path creates the
-soft appointment; timed reminders land with the reminder job).
+**Also built (Slices 4–8):** funnel dashboard + call playback + Customer Directory · auth
+(login/signup/guard, create_workspace) · Settings (cadence, voice/persona, number pool) + number
+warm-up ramp + answer-rate health job · Campaigns (create + launch → slotter) · Team invites
+(invite/accept/revoke + /join).
+
+**Not yet wired:** Insights/conversation-intelligence (`call_analyses`) · real myKaarma adapter ·
+RO/shown re-import loop · appointment reminder scheduling (booked path creates the soft appointment;
+timed reminders land with the reminder job).
