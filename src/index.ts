@@ -4,6 +4,8 @@ import { serve } from "@hono/node-server";
 import { requireAuth } from "./lib/auth";
 import { importRoutes } from "./routes/imports";
 import { vapiWebhooks } from "./routes/webhooks/vapi";
+import { telnyxWebhooks } from "./routes/webhooks/telnyx";
+import { supabaseAdmin } from "./lib/supabase";
 import { startWorker, stopWorker } from "./jobs/worker";
 
 const app = new Hono();
@@ -17,7 +19,19 @@ app.use("/*", cors({
 app.get("/health", (c) => c.json({ ok: true }));
 
 // ── Webhooks (provider-authenticated, NOT requireAuth) ──
-app.route("/webhooks", vapiWebhooks);   // /webhooks/vapi (thin durable handler, §5b)
+app.route("/webhooks", vapiWebhooks);     // /webhooks/vapi   (thin durable handler, §5b)
+app.route("/webhooks", telnyxWebhooks);   // /webhooks/telnyx (SMS status + inbound STOP)
+
+// ── Unsubscribe (public, atomic opt-out) ──
+app.get("/u/:customerId", async (c) => {
+  await supabaseAdmin.from("customers")
+    .update({ opted_out: true }).eq("id", c.req.param("customerId"));
+  // Cancel any scheduled outreach for this customer across channels.
+  await supabaseAdmin.from("touchpoints")
+    .update({ status: "canceled" })
+    .eq("customer_id", c.req.param("customerId")).in("status", ["scheduled", "claiming"]);
+  return c.html("<p>You've been unsubscribed from service reminders. Thank you.</p>");
+});
 
 // ── Authenticated dashboard API (companyId/userId from context, never the body) ──
 app.use("/imports/*", requireAuth);

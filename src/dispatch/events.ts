@@ -9,7 +9,7 @@
 
 import { supabaseAdmin } from "../lib/supabase";
 import { recordCost, RATES } from "../lib/costs";
-import { applyOutcome } from "./cadence";
+import { applyOutcome, optOutCustomer } from "./cadence";
 
 interface ProcessJob { webhookEventId: string; }
 
@@ -25,9 +25,13 @@ export async function processWebhookEvent(eventId: string): Promise<void> {
   if (!ev || ev.processed_at) return;
 
   try {
-    const msg = ev.raw_payload?.message ?? {};
-    if (msg.type === "end-of-call-report") {
-      await handleEndOfCall(ev.id, ev.touchpoint_id, msg);
+    if (ev.provider === "vapi") {
+      const msg = ev.raw_payload?.message ?? {};
+      if (msg.type === "end-of-call-report") {
+        await handleEndOfCall(ev.id, ev.touchpoint_id, msg);
+      }
+    } else if (ev.provider === "telnyx") {
+      await handleTelnyxEvent(ev.raw_payload);
     }
     await supabaseAdmin.from("webhook_events")
       .update({ processed_at: new Date().toISOString() }).eq("id", ev.id);
@@ -35,6 +39,24 @@ export async function processWebhookEvent(eventId: string): Promise<void> {
     await supabaseAdmin.from("webhook_events")
       .update({ processing_error: e.message }).eq("id", ev.id);
     throw e; // let pg-boss retry
+  }
+}
+
+/** Telnyx events: inbound STOP → atomic opt-out; delivery failures could feed number health later. */
+async function handleTelnyxEvent(payload: any): Promise<void> {
+  const eventType = payload?.data?.event_type ?? "";
+  if (eventType !== "message.received") return;
+
+  const from: string | null = payload?.data?.payload?.from?.phone_number ?? null;
+  const text: string = String(payload?.data?.payload?.text ?? "").trim().toLowerCase();
+  const isStop = /^(stop|unsubscribe|cancel|quit|end)\b/.test(text);
+  if (!from || !isStop) return;
+
+  // Find the customer by phone across companies (a number is unique enough to opt out everywhere).
+  const { data: customers } = await supabaseAdmin
+    .from("customers").select("id, company_id").eq("phone", from);
+  for (const cust of customers ?? []) {
+    await optOutCustomer(cust.company_id, cust.id);
   }
 }
 

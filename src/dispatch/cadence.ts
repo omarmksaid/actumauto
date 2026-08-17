@@ -72,11 +72,12 @@ async function enqueueFollowup(tp: any, channel: string, kind: string, startAfte
     scheduled_at: new Date(Date.now() + startAfterSec * 1000).toISOString(),
     window_bucket: tp.window_bucket, status: "scheduled", attempt,
   }).select("id").single();
-  if (data && channel === "voice") {
-    await boss.send("dispatch-voice", { touchpointId: data.id },
-      { startAfter: startAfterSec, singletonKey: `dispatch:${data.id}` });
-  }
-  // sms/email dispatch handlers arrive with the messaging slice; the row is created either way.
+  if (!data) return;
+  // Enqueue the matching dispatch job. (The scheduler-tick would also pick these up, but enqueuing
+  // directly honors the precise startAfter for follow-up timing.)
+  const queue = channel === "voice" ? "dispatch-voice" : "dispatch-message";
+  await boss.send(queue, { touchpointId: data.id },
+    { startAfter: startAfterSec, singletonKey: `dispatch:${data.id}` });
 }
 
 async function enqueueFallback(tp: any, channel: "sms" | "email", startAfterSec: number) {
@@ -108,7 +109,7 @@ async function createSoftAppointments(tp: any, outcome: DerivedOutcome) {
 }
 
 /** Atomic opt-out: flag the customer + cancel every scheduled/claiming touchpoint for them. */
-async function optOutCustomer(companyId: string, customerId: string) {
+export async function optOutCustomer(companyId: string, customerId: string) {
   await supabaseAdmin.from("customers")
     .update({ opted_out: true }).eq("id", customerId);
   const { data: pending } = await supabaseAdmin.from("touchpoints")

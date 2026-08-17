@@ -144,11 +144,13 @@ Before pointing this at real customers:
 ---
 
 ## 10. What's built vs. still to come
-**Built (Slices 1–2):** CSV import + column-mapping · service-due engine · scheduler + customer-level
+**Built (Slices 1–3):** CSV import + column-mapping · service-due engine · scheduler + customer-level
 coalescing · claim→gate→execute→confirm voice dispatch · thin durable webhook + event processor ·
-reconciler · cadence engine (voicemail/no-answer/booked/opt-out) · soft booking.
+reconciler · cadence engine (voicemail/no-answer/booked/opt-out) · soft booking · **SMS (Telnyx) +
+email (Resend) senders** behind the same claim/confirm dispatch · Telnyx status/inbound-STOP webhook ·
+`/u/:customerId` unsubscribe (atomic opt-out).
 
-**Not yet wired:** SMS/email channel *senders* (rows are created by the cadence engine; the actual
-Telnyx/Resend send handlers are the next slice) · funnel dashboard + call playback + Customer
-Directory UI · Insights/conversation-intelligence (`call_analyses`) · number warm-up ramp +
-answer-rate health job · real myKaarma adapter · RO/shown re-import loop.
+**Not yet wired:** funnel dashboard + call playback + Customer Directory UI · Insights/
+conversation-intelligence (`call_analyses`) · number warm-up ramp + answer-rate health job · real
+myKaarma adapter · RO/shown re-import loop · appointment reminder scheduling (booked path creates the
+soft appointment; timed reminders land with the reminder job).

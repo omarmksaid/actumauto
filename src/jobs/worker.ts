@@ -10,6 +10,7 @@ import { boss } from "./queue";
 import { supabaseAdmin } from "../lib/supabase";
 import { registerImport } from "../imports/worker";
 import { registerDispatch } from "../dispatch/dispatch";
+import { registerMessageDispatch } from "../dispatch/message";
 import { registerEventProcessor } from "../dispatch/events";
 import { reconcile } from "../dispatch/reconciler";
 
@@ -24,6 +25,7 @@ export async function startWorker() {
   // Handlers.
   await registerImport(boss);
   await registerDispatch(boss);
+  await registerMessageDispatch(boss);
   await registerEventProcessor(boss);
 
   // Reconciler cron (§4c) — dedup backstop, every 5 min.
@@ -46,10 +48,8 @@ async function schedulerTick(): Promise<void> {
   const { data, error } = await supabaseAdmin.rpc("claim_due_touchpoints", { p_limit: 50 });
   if (error) { console.error("scheduler-tick rpc error:", error.message); return; }
   for (const row of data ?? []) {
-    if (row.channel === "voice") {
-      await boss.send("dispatch-voice", { touchpointId: row.id },
-        { singletonKey: `dispatch:${row.id}` });
-    }
+    const queue = row.channel === "voice" ? "dispatch-voice" : "dispatch-message";
+    await boss.send(queue, { touchpointId: row.id }, { singletonKey: `dispatch:${row.id}` });
   }
 }
 
