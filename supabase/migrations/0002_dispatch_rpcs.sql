@@ -1,3 +1,13 @@
+-- ⚠️ OBSOLETE — SAFE TO SKIP.
+--
+-- These RPCs supported OUTBOUND dialing (claiming due touchpoints for the scheduler, and the
+-- per-number daily send counter). The system is inbound-only now and no code calls either
+-- function. The file is kept so the migration numbering stays stable and older databases that
+-- already ran it are unaffected.
+--
+-- Running it on a fresh database is harmless (the touchpoints/phone_numbers tables still exist),
+-- but unnecessary. New setups: run 0001 → 0003 → 0004, then the seed.
+
 -- Dispatch-support RPCs (PLAN.md §4b): concurrent-safe touchpoint claiming + number usage.
 -- These run under the service role from the worker (RLS bypassed), but are written defensively.
 

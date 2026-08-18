@@ -23,10 +23,15 @@ Ordered by dependency. See `PLAN.md` for the why behind each choice.
    unregenerable (PLAN.md §9).
 3. **Run the migrations** in order, then the seed, in the SQL Editor (or `psql`):
    - `supabase/migrations/0001_init.sql`
-   - `supabase/migrations/0002_dispatch_rpcs.sql`
+   - ~~`0002_dispatch_rpcs.sql`~~ — **skip it.** Outbound-only RPCs; nothing calls them now.
+     (Harmless if you run it; the numbering is kept so existing databases aren't disturbed.)
    - `supabase/migrations/0003_invite_expiry.sql`  (team invites need `invites.expires_at`)
    - `supabase/migrations/0004_inbound.sql`  (caller identification, services catalog, handoffs)
-   - `supabase/seed.example.sql`  (buckets, `create_workspace` RPC, global Toyota schedule)
+   - `supabase/seed.example.sql`  (buckets, `global_settings`, `create_workspace` RPC, Toyota schedule)
+
+   There is **no migration tracking table and no CLI runner** — paste each file into the Supabase
+   SQL Editor in this order, once. They are not idempotent: re-running `0001` on a populated
+   database will error on objects that already exist. Verified end to end on a clean Postgres.
 4. Grab these from **Project Settings**:
    - **Project URL** → `SUPABASE_URL` and (web) `NEXT_PUBLIC_SUPABASE_URL`
    - **service_role key** (Data API) → `SUPABASE_SERVICE_ROLE_KEY` (server only, never the browser)
