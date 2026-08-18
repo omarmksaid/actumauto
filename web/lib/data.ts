@@ -35,36 +35,33 @@ export const demoImports: ImportRow[] = [
 // Real query (imports page):
 //   apiCall("/imports")  → { imports: [...] }
 
-// ── Funnel (Today) ──  apiCall("/agent/funnel")
+// ── Today (inbound) ──  apiCall("/agent/funnel")
 export const demoFunnel = {
-  funnel: {
-    slotted: 214, in_flight: 6, called: 388, answered: 171, booked: 92,
-    declined: 54, no_answer: 121, voicemail: 46, spam_or_error: 9,
+  inbound: {
+    calls_30d: 84, calls_today: 6, identified: 51, anonymous: 33, ambiguous: 7,
+    identify_rate: 0.607, booked: 19, avg_duration_sec: 148, cost_usd_30d: 18.42,
   },
-  appointments: { pending_confirmation: 31, confirmed: 48, shown: 37, no_show: 6 },
-  numbers: [
-    { e164: "+14085550110", enabled: true, answer_rate_7d: 0.44, health_score: 0.9, quarantined_at: null, sent_today: 180, daily_cap: 400 },
-    { e164: "+14085550111", enabled: true, answer_rate_7d: 0.29, health_score: 0.6, quarantined_at: null, sent_today: 210, daily_cap: 400 },
-  ],
+  appointments: { pending_confirmation: 12, confirmed: 9, shown: 7, no_show: 1 },
+  handoffs: {
+    total: 29, open: 11, needs_callback: 3,
+    by_reason: { where_is_my_car: 14, pricing: 8, requested_human: 4, complaint: 2, out_of_scope: 1 },
+  },
 };
 
 // ── Calls list ──  apiCall("/agent/calls")
 export interface CallRow {
   id: string; vapi_call_id: string | null; duration_sec: number | null;
   outcome: string | null; cost_usd: number | null; created_at: string;
-  /** Inbound service-line calls (§16) have no touchpoint and may have no customer. */
-  direction?: "inbound" | "outbound";
+  /** Inbound calls have no touchpoint, and no customer when caller ID doesn't match (§16a). */
   from_number?: string | null;
   customers: { full_name: string; phone: string | null } | null;
 }
 export const demoCalls: CallRow[] = [
-  { id: "c1", vapi_call_id: "v1", duration_sec: 132, outcome: "booked", cost_usd: 0.29, created_at: "2026-08-16T16:10:00Z", customers: { full_name: "Maria Chen", phone: "+14085550142" } },
-  { id: "c2", vapi_call_id: "v2", duration_sec: 41, outcome: "declined", cost_usd: 0.09, created_at: "2026-08-16T16:02:00Z", customers: { full_name: "Devon Park", phone: "+14085550199" } },
-  { id: "c3", vapi_call_id: "v3", duration_sec: 0, outcome: "no_answer", cost_usd: 0.02, created_at: "2026-08-16T15:50:00Z", customers: { full_name: "Priya Nair", phone: "+14085550188" } },
-  // Inbound service-line calls (§16): identified by caller ID, or anonymous when the number misses.
-  { id: "c4", vapi_call_id: "v4", direction: "inbound", from_number: "+14085550142", duration_sec: 214, outcome: "answered", cost_usd: 0.41, created_at: "2026-08-17T15:42:00Z", customers: { full_name: "Maria Chen", phone: "+14085550142" } },
-  { id: "c5", vapi_call_id: "v5", direction: "inbound", from_number: "+14085550177", duration_sec: 96, outcome: "answered", cost_usd: 0.19, created_at: "2026-08-17T15:20:00Z", customers: null },
+  { id: "c4", vapi_call_id: "v4", from_number: "+14085550142", duration_sec: 214, outcome: "booked", cost_usd: 0.41, created_at: "2026-08-17T15:42:00Z", customers: { full_name: "Maria Chen", phone: "+14085550142" } },
+  { id: "c5", vapi_call_id: "v5", from_number: "+14085550177", duration_sec: 96, outcome: "answered", cost_usd: 0.19, created_at: "2026-08-17T15:20:00Z", customers: null },
+  { id: "c6", vapi_call_id: "v6", from_number: "+14085550199", duration_sec: 61, outcome: "answered", cost_usd: 0.12, created_at: "2026-08-17T14:05:00Z", customers: { full_name: "Devon Park", phone: "+14085550199" } },
 ];
+
 
 export const demoCallDetail = {
   call: { id: "c1", recording_url: null, duration_sec: 132, outcome: "booked", cost_usd: 0.29, created_at: "2026-08-16T16:10:00Z", customers: { full_name: "Maria Chen", phone: "+14085550142", email: "maria@example.com" } },
@@ -93,34 +90,19 @@ export const demoTeam = {
   ],
 };
 
-// ── Campaigns ──  apiCall("/campaigns")  /  apiCall("/campaigns/:id")
-export const demoCampaigns = [
-  { id: "camp1", name: "Q3 lapsed owners", status: "active", import_id: "demo-1", pacing: { window_days: 30, last_slot: { touchpointsCreated: 214, vehiclesDue: 251 } }, created_at: "2026-08-15T14:00:00Z" },
-  { id: "camp2", name: "New RAV4 first-service", status: "draft", import_id: null, pacing: { window_days: 21 }, created_at: "2026-08-16T09:00:00Z" },
-];
-export const demoCampaignDetail = {
-  campaign: demoCampaigns[0],
-  progress: { total: 214, scheduled: 108, in_flight: 6, completed: 100, booked: 34, canceled: 0 },
-};
-
 // ── Settings ──  apiCall("/settings")  /  apiCall("/settings/numbers")
 export const demoSettings = {
-  cadence: {
-    no_answer_retry_after_min: 1440, max_call_attempts: 2,
-    sms_fallback_after_min: 120, email_fallback_after_min: 240,
-    reminder_offsets_min: [1440, 120],
-    on_machine: "drop_message", voicemail_counts_as_attempt: false, voicemail_sms_immediate: true,
-    quiet_start: "20:00", quiet_end: "09:00",
-  },
   company: { name: "Milpitas Toyota", timezone: "America/Los_Angeles" },
   voice: { provider: "cartesia", voice_id: "sonic-english" },
-  persona_prompt: "You are a friendly, concise service-reminder assistant for Milpitas Toyota's service department. Warm, respectful of their time, never pushy.",
+  persona_prompt: "You are the service department's phone assistant for Milpitas Toyota. Warm, efficient, and respectful of the caller's time.",
   customer_types: ["loyal", "lapsed", "new", "vip"],
 };
+
 export const demoNumbers = [
-  { id: "n1", e164: "+14085550110", provider: "telnyx", enabled: true, weight: 1, daily_cap: 400, sent_today: 180, effective_cap_today: 400, ramp_started_on: "2026-07-20", answer_rate_7d: 0.44, health_score: 0.9, quarantined_at: null, cnam: "Milpitas Toyota" },
-  { id: "n2", e164: "+14085550111", provider: "telnyx", enabled: true, weight: 1, daily_cap: 400, sent_today: 40, effective_cap_today: 150, ramp_started_on: "2026-08-10", answer_rate_7d: 0.29, health_score: 0.6, quarantined_at: null, cnam: "Milpitas Toyota" },
+  { id: "n1", e164: "+14085550100", provider: "telnyx", vapi_phone_id: "vp_123", cnam: "Milpitas Toyota", enabled: true },
+  { id: "n2", e164: "+14085550101", provider: "telnyx", vapi_phone_id: null, cnam: "Milpitas Toyota", enabled: false },
 ];
+
 
 export const demoCustomer = {
   customer: { id: "cust1", full_name: "Maria Chen", phone: "+14085550142", email: "maria@example.com", customer_type: "loyal", tags: ["repeat", "prefers-text"], detected_language: "en", personality: { summary: "Friendly, direct, values quick answers. Prefers texts over calls." }, notes: "", opted_out: false, do_not_contact: false },
@@ -129,23 +111,10 @@ export const demoCustomer = {
     { id: "v2", make: "Toyota", model: "Sienna", year: 2019, mileage: 74050, mileage_as_of: "2026-05-01", avg_miles_per_day: 41, last_service_on: "2025-12-02", vin: "5TDY1234500000002", trim: "LE" },
   ],
   recentCalls: [{ id: "c1", outcome: "booked", duration_sec: 132, created_at: "2026-08-16T16:10:00Z" }],
-  recentMessages: [{ channel: "sms", direction: "outbound", content: "Hi Maria, your RAV4 is due for service…", created_at: "2026-08-10T18:00:00Z" }],
   appointments: [{ id: "a1", status: "pending_confirmation", starts_at: null, preferred_time: "Tuesday morning", created_at: "2026-08-16T16:10:00Z" }],
 };
 
 // ── Inbound service line (§16) ──────────────────────────────────────────────
-
-// apiCall("/agent/inbound/stats")
-export const demoInboundStats = {
-  inbound: {
-    total: 84, identified: 51, anonymous: 33, ambiguous: 7,
-    identify_rate: 0.607, cost_usd: 18.42,
-  },
-  handoffs: {
-    total: 29, open: 11, needs_callback: 3,
-    by_reason: { where_is_my_car: 14, pricing: 8, requested_human: 4, complaint: 2, out_of_scope: 1 },
-  },
-};
 
 // apiCall("/agent/handoffs")
 export interface HandoffRow {
@@ -194,3 +163,40 @@ export const demoInboundSettings = {
   persona_prompt: "",
   voice: null,
 };
+
+// ── Service schedules ──  apiCall("/schedules")
+export interface ScheduleInterval {
+  id: string;
+  mileage: number | null;
+  months: number | null;
+  service_name: string;
+  operations: string[];
+  severity: string;
+}
+export interface ScheduleRow {
+  id: string;
+  make: string;
+  model: string | null;
+  year_from: number | null;
+  year_to: number | null;
+  source: string | null;
+  notes: string | null;
+  is_global: boolean;
+  intervals: ScheduleInterval[];
+}
+export const demoSchedules: ScheduleRow[] = [
+  {
+    id: "sch1", make: "Toyota", model: null, year_from: null, year_to: null,
+    source: "Public Toyota maintenance-schedule references (compiled)",
+    notes: "APPROXIMATE — verify with dealer. Applies to most gas Toyota models on the normal schedule.",
+    is_global: true,
+    intervals: [
+      { id: "i1", mileage: 5000, months: 6, service_name: "Oil & filter, tire rotation, multi-point inspection", operations: ["oil_change", "tire_rotation", "multipoint_inspection"], severity: "standard" },
+      { id: "i2", mileage: 10000, months: 12, service_name: "Oil & filter, tire rotation, inspect brakes & fluids", operations: ["oil_change", "tire_rotation", "brake_inspection", "fluid_check"], severity: "standard" },
+      { id: "i3", mileage: 15000, months: 18, service_name: "Oil & filter, tire rotation, cabin/engine air filter check", operations: ["oil_change", "tire_rotation", "air_filter_check"], severity: "standard" },
+      { id: "i4", mileage: 30000, months: 36, service_name: "Major service: fluids, filters, brakes, drivetrain inspection", operations: ["oil_change", "brake_service", "transmission_check", "coolant_check"], severity: "major" },
+      { id: "i5", mileage: 60000, months: 72, service_name: "Major service: spark plugs, drive belts, coolant, brake fluid", operations: ["spark_plugs", "drive_belts", "coolant_flush", "brake_fluid"], severity: "major" },
+      { id: "i6", mileage: 90000, months: 108, service_name: "Major service: 90k inspection, plugs, fluids, timing components", operations: ["spark_plugs", "coolant_flush", "transmission_service", "inspection"], severity: "major" },
+    ],
+  },
+];

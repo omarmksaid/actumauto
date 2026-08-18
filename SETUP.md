@@ -166,25 +166,36 @@ Before pointing this at real customers:
 ---
 
 ## 10. What's built vs. still to come
-**Built (Slices 1–3):** CSV import + column-mapping · service-due engine · scheduler + customer-level
-coalescing · claim→gate→execute→confirm voice dispatch · thin durable webhook + event processor ·
-reconciler · cadence engine (voicemail/no-answer/booked/opt-out) · soft booking · **SMS (Telnyx) +
-email (Resend) senders** behind the same claim/confirm dispatch · Telnyx status/inbound-STOP webhook ·
-`/u/:customerId` unsubscribe (atomic opt-out).
 
-**Also built (Slices 4–8):** funnel dashboard + call playback + Customer Directory · auth
-(login/signup/guard, create_workspace) · Settings (cadence, voice/persona, number pool) + number
-warm-up ramp + answer-rate health job · Campaigns (create + launch → slotter) · Team invites
-(invite/accept/revoke + /join).
+**INBOUND ONLY.** The system answers the dealership's service line. It does not place calls, send
+SMS, or run campaigns — that machinery was removed (scheduler, dial protocol, reconciler, cadences,
+number-pool pacing, SMS channel).
 
-**Also built (Slice 9 — inbound service line, §16):** caller identification from caller ID
-(anonymous on a miss *or* an ambiguous shared number) · inbound assistant + in-call tools
-(services lookup, their vehicles, what's due, booking) · transfer to the service line with a
-message-taking fallback · services catalog + inbound settings · Handoffs queue + inbound stats
-(identified vs. anonymous) · inbound calls in the Calls list with recording/transcript.
+**Built:** inbound caller identification from caller ID (anonymous on a miss *or* an ambiguous
+shared number) · inbound assistant + in-call tools (services lookup, their vehicles, what's due,
+booking) · transfer to the service line with a message-taking fallback · services catalog ·
+handoff queue · service schedules + due engine (repeating intervals, refuses to guess without
+data) · CSV import of past customers + vehicles · durable Vapi webhook → recording/transcript/cost ·
+Today dashboard · call playback · customer directory · auth + team invites · soft booking.
 
-**Not yet wired:** Insights/conversation-intelligence (`call_analyses`) · real myKaarma adapter ·
-RO/shown re-import loop · appointment reminder scheduling (booked path creates the soft appointment;
-timed reminders land with the reminder job) · **real "where is my car" answers** (needs myKaarma
-repair-order status; until then the agent always transfers) · `verbal_verify` inbound identification
-(the setting exists; the in-call verification flow doesn't).
+**Not yet wired:** real "where is my car" answers (needs myKaarma repair-order status; the agent
+always transfers today) · `verbal_verify` caller identification (the setting exists, the in-call
+flow doesn't) · real myKaarma booking adapter · transactional email (`src/notify/email.ts` is
+ready but nothing calls it) · conversation-intelligence / `call_analyses` · RO/shown re-import.
+
+**Never validated against live providers.** Everything above typechecks and the data layer has been
+exercised against a real Postgres, but no Vapi call has ever been placed or received, and there is
+no automated test suite. See "Validation status" below.
+
+## 11. Validation status (read this before trusting anything)
+
+| Area | State |
+|---|---|
+| Migrations `0001`–`0004` | **Verified** — apply cleanly to a real Postgres |
+| Caller identification | **Verified** — exact / formatted / 10-digit / shared-number / blocked / cross-tenant cases |
+| Due engine | **Verified** — repeating intervals, major-service tie-break, partial and missing data |
+| Services catalog, directory search | **Verified** against seeded data |
+| TypeScript (API + web) | **Clean**; web builds |
+| Vapi inbound handshake, in-call tools, transfer | **Never run** — no provider has been contacted |
+| CSV import end to end | **Never run** against a real file |
+| Automated tests | **None exist** |

@@ -22,15 +22,14 @@ vapiWebhooks.post("/vapi", async (c) => {
   try { payload = await c.req.json(); } catch { /* keep {} */ }
 
   const eventType = payload?.message?.type ?? "unknown";
-  const touchpointId = payload?.message?.call?.assistant?.metadata?.touchpointId
-    ?? payload?.message?.call?.metadata?.touchpointId ?? null;
+  // Inbound calls carry no touchpoint (no scheduled work sits behind them) — the processor
+  // resolves the call by its Vapi call id instead.
 
   const { data, error } = await supabaseAdmin.from("webhook_events").insert({
     provider: "vapi",
     event_type: eventType,
     raw_payload: payload,
     signature_valid: valid,
-    touchpoint_id: touchpointId,
   }).select("id").single();
 
   // Even on an invalid signature we persist (for audit) but don't enqueue processing.

@@ -4,16 +4,14 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient, isDemo } from "@/lib/supabase";
 
-// Slice 1 ships Imports; the rest are placeholders that arrive in later slices (PLAN.md §6/§10).
+// Inbound-only (PLAN.md §16): no Campaigns — the system doesn't place calls any more.
 const NAV = [
   { href: "/today", label: "Today" },
-  { href: "/directory", label: "Customer Directory" },
-  { href: "/campaigns", label: "Campaigns" },
-  { href: "/imports", label: "Imports" },
   { href: "/calls", label: "Calls" },
   { href: "/handoffs", label: "Handoffs" },
+  { href: "/directory", label: "Customer Directory" },
+  { href: "/imports", label: "Imports" },
   { href: "/schedules", label: "Service Schedules" },
-  { href: "/insights", label: "Insights" },
   { href: "/team", label: "Team" },
   { href: "/settings", label: "Settings" },
 ];

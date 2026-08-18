@@ -29,7 +29,7 @@ export default function SettingsPage() {
     if (isDemo) { setSaved(true); return; }
     try {
       await apiCall("/settings", { method: "PUT", body: JSON.stringify({
-        cadence: s.cadence, voice: s.voice, persona_prompt: s.persona_prompt,
+        voice: s.voice, persona_prompt: s.persona_prompt,
         customer_types: s.customer_types, inbound: s.inbound,
       }) });
       setSaved(true);
@@ -39,48 +39,19 @@ export default function SettingsPage() {
   if (loading) return <div className="muted">Loading…</div>;
   if (!s) return <div className="banner banner-error">{error ?? "Could not load settings."}</div>;
 
-  const cad = s.cadence ?? {};
-  const setCad = (patch: any) => setS({ ...s, cadence: { ...cad, ...patch } });
   const inb = s.inbound ?? {};
   const setInb = (patch: any) => setS({ ...s, inbound: { ...inb, ...patch } });
 
   return (
     <div>
       <h1 className="page-title">Settings</h1>
-      <p className="page-sub">Follow-up timing, voice &amp; behavior, and your number pool.</p>
+      <p className="page-sub">How the agent answers your service line, what it can offer, and which numbers route to it.</p>
       {isDemo && <div className="banner banner-warn" style={{ marginBottom: 16 }}>Demo data — changes aren&apos;t saved.</div>}
       {error && <div className="banner banner-error" style={{ marginBottom: 16 }}>{error}</div>}
 
-      {/* ── Cadence ── */}
-      <div className="card card-pad">
-        <div className="section-label">Follow-up cadence</div>
-        <div className="grid-3">
-          <Num label="No-answer retry (min)" v={cad.no_answer_retry_after_min} on={(v) => setCad({ no_answer_retry_after_min: v })} />
-          <Num label="Max call attempts" v={cad.max_call_attempts} on={(v) => setCad({ max_call_attempts: v })} />
-          <Num label="SMS fallback after (min)" v={cad.sms_fallback_after_min} on={(v) => setCad({ sms_fallback_after_min: v })} />
-          <Num label="Email fallback after (min)" v={cad.email_fallback_after_min} on={(v) => setCad({ email_fallback_after_min: v })} />
-          <Field label="Quiet hours start"><input type="time" value={cad.quiet_start ?? "20:00"} onChange={(e) => setCad({ quiet_start: e.target.value })} /></Field>
-          <Field label="Quiet hours end"><input type="time" value={cad.quiet_end ?? "09:00"} onChange={(e) => setCad({ quiet_end: e.target.value })} /></Field>
-        </div>
-        <div className="grid-3" style={{ marginTop: 12 }}>
-          <Field label="On voicemail">
-            <select value={cad.on_machine ?? "drop_message"} onChange={(e) => setCad({ on_machine: e.target.value })}>
-              <option value="drop_message">Drop a message</option>
-              <option value="hangup">Hang up</option>
-            </select>
-          </Field>
-          <Check label="Voicemail counts as attempt" v={cad.voicemail_counts_as_attempt} on={(v) => setCad({ voicemail_counts_as_attempt: v })} />
-          <Check label="Immediate SMS after voicemail" v={cad.voicemail_sms_immediate} on={(v) => setCad({ voicemail_sms_immediate: v })} />
-        </div>
-        <Field label="Appointment reminder offsets (min before, comma-separated)">
-          <input value={(cad.reminder_offsets_min ?? []).join(", ")}
-            onChange={(e) => setCad({ reminder_offsets_min: e.target.value.split(",").map((x: string) => parseInt(x.trim(), 10)).filter((n: number) => !isNaN(n)) })} />
-        </Field>
-      </div>
-
       {/* ── Voice & persona ── */}
       <div className="card card-pad">
-        <div className="section-label">Voice &amp; behavior</div>
+        <div className="section-label">Agent voice</div>
         <div className="grid-2">
           <Field label="TTS provider">
             <select value={s.voice?.provider ?? "cartesia"} onChange={(e) => setS({ ...s, voice: { ...s.voice, provider: e.target.value } })}>
@@ -91,7 +62,7 @@ export default function SettingsPage() {
           </Field>
           <Field label="Voice ID"><input value={s.voice?.voice_id ?? ""} onChange={(e) => setS({ ...s, voice: { ...s.voice, voice_id: e.target.value } })} /></Field>
         </div>
-        <Field label="Behavior prompt (wraps hardcoded guardrails)">
+        <Field label="Default behavior prompt (wraps hardcoded guardrails)">
           <textarea rows={4} value={s.persona_prompt ?? ""} onChange={(e) => setS({ ...s, persona_prompt: e.target.value })} />
         </Field>
         <Field label="Customer types (comma-separated)">
@@ -274,7 +245,7 @@ function NumberPool({ numbers, setNumbers }: { numbers: any[]; setNumbers: (n: a
 
   async function add() {
     if (!e164) return;
-    if (isDemo) { setNumbers([...numbers, { id: `demo-${Date.now()}`, e164, provider: "telnyx", enabled: true, weight: 1, daily_cap: 400, sent_today: 0, effective_cap_today: 20, ramp_started_on: new Date().toISOString().slice(0, 10), answer_rate_7d: null, health_score: null, quarantined_at: null }]); setE164(""); return; }
+    if (isDemo) { setNumbers([...numbers, { id: `demo-${Date.now()}`, e164, provider: "telnyx", vapi_phone_id: null, cnam: null, enabled: true }]); setE164(""); return; }
     setBusy(true); setErr(null);
     try {
       const { number } = await apiCall<{ number: any }>("/settings/numbers", { method: "POST", body: JSON.stringify({ e164 }) });
@@ -290,22 +261,20 @@ function NumberPool({ numbers, setNumbers }: { numbers: any[]; setNumbers: (n: a
 
   return (
     <div className="card">
-      <div className="card-pad section-label" style={{ marginBottom: 0 }}>Number pool (volume knobs &amp; health)</div>
+      <div className="card-pad section-label" style={{ marginBottom: 0 }}>Numbers that route to the agent</div>
       <table>
-        <thead><tr><th>Number</th><th>CNAM</th><th>Weight</th><th>Today / cap</th><th>Answer 7d</th><th>Ramp</th><th></th></tr></thead>
+        <thead><tr><th>Number</th><th>Caller ID name</th><th>Vapi number id</th><th>Status</th><th></th></tr></thead>
         <tbody>
           {numbers.map((n) => (
             <tr key={n.id}>
-              <td>{n.e164}{n.quarantined_at && <span className="chip chip-hot" style={{ marginLeft: 8 }}>quarantined</span>}</td>
+              <td>{n.e164}</td>
               <td className="hint">{n.cnam ?? "—"}</td>
-              <td>{n.weight}</td>
-              <td className="hint">{n.sent_today ?? 0} / {n.effective_cap_today ?? n.daily_cap}</td>
-              <td className="hint">{n.answer_rate_7d != null ? `${Math.round(n.answer_rate_7d * 100)}%` : "—"}</td>
-              <td className="hint">{n.effective_cap_today < n.daily_cap ? `ramping (${n.effective_cap_today})` : "full"}</td>
+              <td className="hint">{n.vapi_phone_id ?? <span style={{ color: "var(--hot)" }}>not linked</span>}</td>
+              <td>{n.enabled ? <span className="chip chip-ok">routing</span> : <span className="chip chip-muted">disabled</span>}</td>
               <td><button className="btn" onClick={() => toggle(n)}>{n.enabled ? "Disable" : "Enable"}</button></td>
             </tr>
           ))}
-          {numbers.length === 0 && <tr><td colSpan={7} className="muted">No numbers yet.</td></tr>}
+          {numbers.length === 0 && <tr><td colSpan={5} className="muted">No numbers yet — the agent can\u2019t answer until a number routes to it.</td></tr>}
         </tbody>
       </table>
       <div className="card-pad" style={{ display: "flex", gap: 10, alignItems: "center" }}>

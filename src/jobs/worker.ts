@@ -1,20 +1,17 @@
 /**
- * pg-boss worker bootstrap. Starts the queue and registers job handlers + crons.
+ * pg-boss worker bootstrap. Starts the queue and registers job handlers.
  *
- * Slice 1: import worker.
- * Slice 2: dispatch (claim→gate→execute→confirm), webhook-event processor, reconciler cron,
- *          and the scheduler tick that claims due touchpoints with FOR UPDATE SKIP LOCKED.
+ * INBOUND-ONLY. The system no longer places calls, so there is no dispatch queue, no scheduler
+ * tick, no reconciler, and no number-health cron — all of that existed to pace and de-duplicate
+ * OUTBOUND dialing. What remains is genuinely asynchronous work:
+ *
+ *   import          — CSV of past customers + their vehicles, so an inbound caller is recognized.
+ *   process-webhook — Vapi end-of-call events (recording, transcript, cost) off the durable inbox.
  */
 
 import { boss } from "./queue";
-import { supabaseAdmin } from "../lib/supabase";
 import { registerImport } from "../imports/worker";
-import { registerDispatch } from "../dispatch/dispatch";
-import { registerMessageDispatch } from "../dispatch/message";
-import { registerEventProcessor } from "../dispatch/events";
-import { reconcile } from "../dispatch/reconciler";
-import { runNumberHealth } from "../numbers/job";
-import { registerSlotJob } from "../scheduling/slotJob";
+import { registerEventProcessor } from "../calls/events";
 
 let started = false;
 
@@ -24,42 +21,10 @@ export async function startWorker() {
 
   await boss.start();
 
-  // Handlers.
   await registerImport(boss);
-  await registerDispatch(boss);
-  await registerMessageDispatch(boss);
   await registerEventProcessor(boss);
-  await registerSlotJob(boss);
 
-  // Reconciler cron (§4c) — dedup backstop, every 5 min.
-  await boss.work("reconcile", async () => { await reconcile(); });
-  await boss.schedule("reconcile", "*/5 * * * *");
-
-  // Number-health cron (§2) — answer-rate decay + ramp/reset, a few times a day.
-  await boss.work("number-health", async () => {
-    await runNumberHealth(new Date().toISOString());
-  });
-  await boss.schedule("number-health", "0 */6 * * *");
-
-  // Scheduler tick — claims due touchpoints and enqueues dispatch. FOR UPDATE SKIP LOCKED via RPC
-  // (claim_due_touchpoints) so concurrent scheduler instances never grab the same row (§4b).
-  await boss.work("scheduler-tick", async () => { await schedulerTick(); });
-  await boss.schedule("scheduler-tick", "* * * * *"); // every minute
-
-  console.log("worker started: [import, dispatch-voice, process-webhook, reconcile, scheduler-tick]");
-}
-
-/**
- * Pull due, schedulable touchpoints and enqueue a dispatch job for each. Uses the
- * claim_due_touchpoints RPC (FOR UPDATE SKIP LOCKED) so two workers can't grab the same row.
- */
-async function schedulerTick(): Promise<void> {
-  const { data, error } = await supabaseAdmin.rpc("claim_due_touchpoints", { p_limit: 50 });
-  if (error) { console.error("scheduler-tick rpc error:", error.message); return; }
-  for (const row of data ?? []) {
-    const queue = row.channel === "voice" ? "dispatch-voice" : "dispatch-message";
-    await boss.send(queue, { touchpointId: row.id }, { singletonKey: `dispatch:${row.id}` });
-  }
+  console.log("worker started: [import, process-webhook]");
 }
 
 /** SIGTERM drain (PLAN.md §9): stop claiming new jobs, let in-flight work finish, exit. */

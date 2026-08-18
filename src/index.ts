@@ -5,10 +5,9 @@ import { requireAuth } from "./lib/auth";
 import { importRoutes } from "./routes/imports";
 import { agentRoutes } from "./routes/agent";
 import { settingsRoutes } from "./routes/settings";
-import { campaignRoutes } from "./routes/campaigns";
+import { scheduleRoutes } from "./routes/schedules";
 import { teamRoutes, acceptInvite, lookupInvite } from "./routes/team";
 import { vapiWebhooks } from "./routes/webhooks/vapi";
-import { telnyxWebhooks } from "./routes/webhooks/telnyx";
 import { inboundRoutes } from "./routes/inbound";
 import { supabaseAdmin } from "./lib/supabase";
 import { startWorker, stopWorker } from "./jobs/worker";
@@ -25,21 +24,18 @@ app.get("/health", (c) => c.json({ ok: true }));
 
 // ── Webhooks (provider-authenticated, NOT requireAuth) ──
 app.route("/webhooks", vapiWebhooks);     // /webhooks/vapi   (thin durable handler, §5b)
-app.route("/webhooks", telnyxWebhooks);   // /webhooks/telnyx (SMS status + inbound STOP)
 
 // ── Inbound service line (§16) — provider-authenticated via the Vapi shared secret.
 // Answers synchronously (assistant config + in-call tools), so it is NOT a durable-inbox path.
 app.route("/inbound", inboundRoutes);     // /inbound/assistant, /inbound/tools
 
-// ── Unsubscribe (public, atomic opt-out) ──
+// ── Unsubscribe (public) ──
+// We no longer send outbound campaigns, so there is nothing to cancel — but the link still has to
+// work: it appears in previously-sent email, and honoring it remains a legal obligation.
 app.get("/u/:customerId", async (c) => {
   await supabaseAdmin.from("customers")
     .update({ opted_out: true }).eq("id", c.req.param("customerId"));
-  // Cancel any scheduled outreach for this customer across channels.
-  await supabaseAdmin.from("touchpoints")
-    .update({ status: "canceled" })
-    .eq("customer_id", c.req.param("customerId")).in("status", ["scheduled", "claiming"]);
-  return c.html("<p>You've been unsubscribed from service reminders. Thank you.</p>");
+  return c.html("<p>You've been unsubscribed. Thank you.</p>");
 });
 
 // ── Authenticated dashboard API (companyId/userId from context, never the body) ──
@@ -49,8 +45,8 @@ app.use("/agent/*", requireAuth);
 app.route("/agent", agentRoutes);
 app.use("/settings/*", requireAuth);
 app.route("/settings", settingsRoutes);
-app.use("/campaigns/*", requireAuth);
-app.route("/campaigns", campaignRoutes);
+app.use("/schedules/*", requireAuth);
+app.route("/schedules", scheduleRoutes);
 
 // Team: accept/lookup are public (pre-membership); the rest require auth.
 app.get("/team/invite", lookupInvite);   // token → the email it was issued to

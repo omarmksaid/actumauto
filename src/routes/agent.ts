@@ -1,6 +1,9 @@
 /**
- * Authenticated dashboard API (PLAN.md §6). companyId/userId come from requireAuth context —
- * never the body (§8 invariant 1). Slice 4: funnel, calls + playback, customer directory.
+ * Authenticated dashboard API (PLAN.md §6, §16). companyId/userId come from requireAuth context —
+ * never the body (§8 invariant 1).
+ *
+ * INBOUND-ONLY. The old outbound conversion funnel (slotted → dialed → answered → booked) is gone
+ * with outbound dialing; "Today" now describes the calls that CAME IN.
  */
 
 import { Hono } from "hono";
@@ -10,97 +13,70 @@ export const agentRoutes = new Hono();
 
 const cid = (c: any) => c.get("companyId") as string;
 
-// ── Funnel (Today) ──────────────────────────────────────────────────────────
-// called → booked → shown, plus in-flight/slotted and spam/other cancellations, per §6/§6b.
+// ── Today (inbound) ─────────────────────────────────────────────────────────
+// What came in, how much of it we could identify, what we booked, and who is waiting on a human.
 agentRoutes.get("/funnel", async (c) => {
   const companyId = cid(c);
+  const since = new Date(Date.now() - 30 * 86400_000).toISOString();
 
-  const [{ data: tps }, { data: appts }, { data: numbers }] = await Promise.all([
-    supabaseAdmin.from("touchpoints").select("status, outcome, channel").eq("company_id", companyId),
-    supabaseAdmin.from("appointments").select("status").eq("company_id", companyId),
-    supabaseAdmin.from("phone_numbers")
-      .select("e164, enabled, answer_rate_7d, health_score, quarantined_at, sent_today, daily_cap")
-      .eq("company_id", companyId),
-  ]);
-
-  const t = tps ?? [];
-  const calls = t.filter((x) => x.channel === "voice");
-  const funnel = {
-    slotted: t.filter((x) => x.status === "scheduled").length,
-    in_flight: t.filter((x) => x.status === "in_flight").length,
-    called: calls.filter((x) => ["completed", "in_flight"].includes(x.status)).length,
-    answered: calls.filter((x) => x.outcome === "answered" || x.outcome === "booked").length,
-    booked: calls.filter((x) => x.outcome === "booked").length,
-    declined: calls.filter((x) => x.outcome === "declined").length,
-    no_answer: calls.filter((x) => x.outcome === "no_answer").length,
-    voicemail: calls.filter((x) => x.outcome === "voicemail_dropped").length,
-    // "canceled due to spam/other issues" (§6 deliverability tile).
-    spam_or_error: t.filter((x) =>
-      x.status === "spam_blocked" || ["bad_number", "carrier_rejected", "provider_error"].includes(x.outcome ?? "")).length,
-  };
-
-  const appointments = {
-    pending_confirmation: (appts ?? []).filter((a) => a.status === "pending_confirmation").length,
-    confirmed: (appts ?? []).filter((a) => a.status === "confirmed").length,
-    shown: (appts ?? []).filter((a) => a.status === "shown").length,   // the number the pitch is built on (§6b)
-    no_show: (appts ?? []).filter((a) => a.status === "no_show").length,
-  };
-
-  return c.json({ funnel, appointments, numbers: numbers ?? [] });
-});
-
-// ── Calls list (both directions; ?direction=inbound|outbound filters) ────────
-agentRoutes.get("/calls", async (c) => {
-  const companyId = cid(c);
-  const direction = c.req.query("direction");
-  let q = supabaseAdmin
-    .from("calls")
-    .select("id, customer_id, vapi_call_id, direction, from_number, duration_sec, outcome, cost_usd, created_at, customers(full_name, phone)")
-    .eq("company_id", companyId);
-  if (direction === "inbound" || direction === "outbound") q = q.eq("direction", direction);
-  const { data } = await q.order("created_at", { ascending: false }).limit(100);
-  return c.json({ calls: data ?? [] });
-});
-
-// ── Inbound stats (§16g) — identified vs. anonymous is the metric that decides
-// whether caller-ID-only identification survives, so it's surfaced from day one.
-agentRoutes.get("/inbound/stats", async (c) => {
-  const companyId = cid(c);
-  const [{ data: calls }, { data: handoffs }] = await Promise.all([
+  const [{ data: calls }, { data: appts }, { data: handoffs }] = await Promise.all([
     supabaseAdmin.from("calls")
-      .select("customer_id, metadata, duration_sec, cost_usd")
-      .eq("company_id", companyId).eq("direction", "inbound"),
+      .select("customer_id, outcome, duration_sec, cost_usd, metadata, created_at")
+      .eq("company_id", companyId).eq("direction", "inbound").gte("created_at", since),
+    supabaseAdmin.from("appointments").select("status").eq("company_id", companyId),
     supabaseAdmin.from("handoff_requests")
       .select("reason, status, transferred").eq("company_id", companyId),
   ]);
 
   const c_ = calls ?? [];
   const identified = c_.filter((x) => !!x.customer_id).length;
-  // Ambiguous (>1 phone match) is tracked apart from "no match": it's the shared-number case,
-  // and a high rate is the argument for turning on verbal verification.
-  const ambiguous = c_.filter((x) => Number((x.metadata as any)?.match_count ?? 0) > 1).length;
+  const today = new Date().toISOString().slice(0, 10);
+
+  const inbound = {
+    calls_30d: c_.length,
+    calls_today: c_.filter((x) => (x.created_at ?? "").slice(0, 10) === today).length,
+    identified,
+    anonymous: c_.length - identified,
+    // >1 phone match — the shared-number case, which we deliberately treat as anonymous (§16a).
+    ambiguous: c_.filter((x) => Number((x.metadata as any)?.match_count ?? 0) > 1).length,
+    identify_rate: c_.length ? Number((identified / c_.length).toFixed(3)) : null,
+    booked: c_.filter((x) => x.outcome === "booked").length,
+    avg_duration_sec: c_.length
+      ? Math.round(c_.reduce((s, x) => s + Number(x.duration_sec ?? 0), 0) / c_.length) : 0,
+    cost_usd_30d: Number(c_.reduce((s, x) => s + Number(x.cost_usd ?? 0), 0).toFixed(2)),
+  };
 
   const h = handoffs ?? [];
   const byReason: Record<string, number> = {};
   for (const row of h) byReason[row.reason] = (byReason[row.reason] ?? 0) + 1;
 
   return c.json({
-    inbound: {
-      total: c_.length,
-      identified,
-      anonymous: c_.length - identified,
-      ambiguous,
-      identify_rate: c_.length ? Number((identified / c_.length).toFixed(3)) : null,
-      cost_usd: Number(c_.reduce((s, x) => s + Number(x.cost_usd ?? 0), 0).toFixed(2)),
+    inbound,
+    appointments: {
+      pending_confirmation: (appts ?? []).filter((a) => a.status === "pending_confirmation").length,
+      confirmed: (appts ?? []).filter((a) => a.status === "confirmed").length,
+      shown: (appts ?? []).filter((a) => a.status === "shown").length,
+      no_show: (appts ?? []).filter((a) => a.status === "no_show").length,
     },
     handoffs: {
       total: h.length,
       open: h.filter((x) => x.status === "open").length,
-      // Transfer didn't connect → an advisor owes this caller a callback.
+      // Transfer never connected → an advisor owes this caller a callback.
       needs_callback: h.filter((x) => x.status === "open" && !x.transferred).length,
       by_reason: byReason,
     },
   });
+});
+
+// ── Calls list ───────────────────────────────────────────────────────────────
+agentRoutes.get("/calls", async (c) => {
+  const companyId = cid(c);
+  const { data } = await supabaseAdmin
+    .from("calls")
+    .select("id, customer_id, vapi_call_id, from_number, duration_sec, outcome, cost_usd, created_at, customers(full_name, phone)")
+    .eq("company_id", companyId).eq("direction", "inbound")
+    .order("created_at", { ascending: false }).limit(100);
+  return c.json({ calls: data ?? [] });
 });
 
 // ── Handoff queue (§16b) — callers the agent sent to a human ─────────────────
@@ -174,16 +150,13 @@ agentRoutes.get("/customers/:id", async (c) => {
     .eq("id", id).eq("company_id", companyId).maybeSingle();
   if (!customer) return c.json({ error: "not found" }, 404);
 
-  const [{ data: vehicles }, { data: recentCalls }, { data: recentMsgs }, { data: appts }] = await Promise.all([
+  const [{ data: vehicles }, { data: recentCalls }, { data: appts }] = await Promise.all([
     supabaseAdmin.from("vehicles")
       .select("id, make, model, year, mileage, mileage_as_of, avg_miles_per_day, last_service_on, vin, trim")
       .eq("customer_id", id),
     supabaseAdmin.from("calls")
       .select("id, outcome, duration_sec, created_at").eq("customer_id", id)
       .order("created_at", { ascending: false }).limit(5),
-    supabaseAdmin.from("messages")
-      .select("channel, direction, content, created_at").eq("customer_id", id)
-      .order("created_at", { ascending: false }).limit(10),
     supabaseAdmin.from("appointments")
       .select("id, status, starts_at, preferred_time, created_at").eq("customer_id", id)
       .order("created_at", { ascending: false }).limit(5),
@@ -191,6 +164,6 @@ agentRoutes.get("/customers/:id", async (c) => {
 
   return c.json({
     customer, vehicles: vehicles ?? [],
-    recentCalls: recentCalls ?? [], recentMessages: recentMsgs ?? [], appointments: appts ?? [],
+    recentCalls: recentCalls ?? [], appointments: appts ?? [],
   });
 });

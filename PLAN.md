@@ -1,22 +1,38 @@
 # Touchpoint Center — Architecture & Build Plan
 
-AI platform for auto-dealership **service departments**, covering **both directions**:
+**AI phone agent for an auto-dealership service department. INBOUND ONLY.**
 
-- **Outbound (service reminders):** dealerships upload a CSV of past customers + car info; the
-  system profiles each customer, computes when service is due (from purchase date + mileage
-  against a per-model service schedule), and **schedules outbound AI voice calls** (plus SMS/email
-  follow-ups) to bring them in for service.
-- **Inbound (service line):** service calls coming into the dealership route to the agent, which
-  identifies the caller from their phone number, answers questions about **the services we own**,
-  tells them **what's coming up on their cars** and recommends it, and **transfers to a service
-  employee** for anything it shouldn't answer — above all "where is my car" (§16).
+Service calls coming into the dealership route to the agent. It identifies the caller from their
+phone number, answers questions about the services the dealership offers, tells them what's coming
+due on their car(s) and recommends it, books a visit, and transfers to a service employee for
+anything out of scope — above all "where is my car," which it never attempts to answer.
 
-Humans get a dashboard of the funnel, can play back any call recording + read transcripts, look up
-any customer in a searchable directory, and book appointments into myKaarma.
+To know who is calling, the dealership uploads a **CSV of past customers and their vehicles**; the
+system also carries **per-model service schedules** so the due engine can enrich a live call with
+what that specific car needs next.
 
-Forked from realtyAI's architecture (Node/Hono + pg-boss + Supabase; Next.js 14 dashboard),
-**stripping WhatsApp and inbound-lead webhooks**, and reshaping around **CSV ingestion +
-scheduled outbound** instead of real-time lead routing.
+Humans get a dashboard of inbound activity, can play back any call with its transcript, look up any
+customer, work the handoff queue, and maintain the services catalog and schedules.
+
+## Scope: no outbound
+
+**The system does not place calls, send SMS, or run campaigns.** It was originally built as an
+outbound service-reminder platform; that was removed deliberately (see the outbound-removal commit).
+Gone with it: the scheduler and touchpoint slotter, the claim→gate→execute→confirm dial protocol,
+the reconciler, cadences and follow-up branches, the number-pool pacing/warm-up/health machinery,
+quiet hours, and the SMS channel.
+
+Sections below that describe outbound mechanics (§3–§5, §10–§15) are retained as **historical
+design record** — they document why the surviving pieces look the way they do, and what the
+tradeoffs were, but they no longer describe running code. **§16 is the live design.**
+
+What survives from that era, because inbound depends on it: the CSV import subsystem, the
+service-schedule + due engine, `BookingProvider`, the durable webhook inbox, cost tracking, auth
+and RLS, and `phone_numbers` — now purely a routing map from a dialed number to a dealership.
+
+Provider stack: Vapi (voice orchestration) · Anthropic (BYO key, Haiku for the live loop) ·
+Deepgram STT · Cartesia/Aura-2 TTS · Telnyx numbers · Supabase (Postgres + Auth + Storage) ·
+Resend (transactional email, currently unwired).
 
 ---
 

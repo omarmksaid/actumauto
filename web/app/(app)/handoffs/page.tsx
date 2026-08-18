@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiCall } from "@/lib/api";
 import { isDemo } from "@/lib/supabase";
-import { demoHandoffs, demoInboundStats, HandoffRow } from "@/lib/data";
+import { demoHandoffs, demoFunnel, HandoffRow } from "@/lib/data";
 
 const REASON_LABEL: Record<string, string> = {
   where_is_my_car: "Where is my car",
@@ -36,7 +36,7 @@ const REASON_CHIP: Record<string, string> = {
 export default function HandoffsPage() {
   const router = useRouter();
   const [rows, setRows] = useState<HandoffRow[]>(isDemo ? demoHandoffs : []);
-  const [stats, setStats] = useState<any>(isDemo ? demoInboundStats : null);
+  const [stats, setStats] = useState<any>(isDemo ? demoFunnel : null);
   const [status, setStatus] = useState<"open" | "resolved" | "all">("open");
   const [loading, setLoading] = useState(!isDemo);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +46,7 @@ export default function HandoffsPage() {
     setLoading(true);
     Promise.all([
       apiCall<{ handoffs: HandoffRow[] }>(`/agent/handoffs?status=${status}`),
-      apiCall<any>("/agent/inbound/stats"),
+      apiCall<any>("/agent/funnel"),
     ])
       .then(([h, s]) => { setRows(h.handoffs); setStats(s); })
       .catch((e) => setError(e.message))
@@ -86,7 +86,7 @@ export default function HandoffsPage() {
         <div className="grid-4" style={{ marginBottom: 16 }}>
           <Stat label="Open" value={stats.handoffs.open} />
           <Stat label="Needs callback" value={stats.handoffs.needs_callback} warn={stats.handoffs.needs_callback > 0} />
-          <Stat label="Inbound calls" value={stats.inbound.total} />
+          <Stat label="Inbound calls (30d)" value={stats.inbound.calls_30d} />
           <Stat
             label={`Identified · ${stats.inbound.anonymous} anonymous`}
             value={stats.inbound.identify_rate != null ? `${Math.round(stats.inbound.identify_rate * 100)}%` : "—"}
