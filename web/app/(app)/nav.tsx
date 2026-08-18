@@ -11,6 +11,7 @@ const NAV = [
   { href: "/campaigns", label: "Campaigns" },
   { href: "/imports", label: "Imports" },
   { href: "/calls", label: "Calls" },
+  { href: "/handoffs", label: "Handoffs" },
   { href: "/schedules", label: "Service Schedules" },
   { href: "/insights", label: "Insights" },
   { href: "/team", label: "Team" },

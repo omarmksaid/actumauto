@@ -58,6 +58,27 @@ Sign up a user in Supabase Auth, then in the SQL editor run `select create_works
 4. Import your Telnyx number(s) into Vapi (dashboard or API) so each gets a **Vapi phone-number id**;
    store that id on the `phone_numbers.vapi_phone_id` row for the number.
 
+### Inbound service line (PLAN.md §16)
+
+To route the dealership's incoming service calls to the agent:
+
+1. In Vapi, open the phone number that should receive inbound calls and set its **inbound
+   assistant** to a **Server URL** (dynamic assistant) of `${APP_URL}/inbound/assistant`, with the
+   same `VAPI_WEBHOOK_SECRET`. On each incoming call Vapi asks that endpoint who's calling, and we
+   answer synchronously with an assistant built for that specific caller.
+2. The number **must exist in `phone_numbers` with its `e164`** — that's how we resolve which
+   dealership was dialed. An unrecognized destination returns 404 and the agent won't answer.
+3. In the dashboard → **Settings → Inbound service line**, set the **transfer number** (the staffed
+   service line). Without it the agent takes a message instead of transferring.
+4. In **Settings → Services we offer**, add the services the dealership performs. The agent answers
+   "do you do X?" from this list *only* — with an empty catalog it transfers every service question.
+5. Point the carrier/main service line at the Vapi number (forward or publish it) once you've tested.
+
+Caller identification is **caller-ID-only**: a caller whose number isn't on file — or whose number
+matches more than one customer — is treated as anonymous and is never read account or vehicle
+details. Watch the identified-vs-anonymous rate on the **Handoffs** page; a low rate is the signal
+to revisit that setting.
+
 ---
 
 ## 4. TTS — Cartesia or Deepgram Aura-2 (A/B vs ElevenLabs)
@@ -156,6 +177,14 @@ email (Resend) senders** behind the same claim/confirm dispatch · Telnyx status
 warm-up ramp + answer-rate health job · Campaigns (create + launch → slotter) · Team invites
 (invite/accept/revoke + /join).
 
+**Also built (Slice 9 — inbound service line, §16):** caller identification from caller ID
+(anonymous on a miss *or* an ambiguous shared number) · inbound assistant + in-call tools
+(services lookup, their vehicles, what's due, booking) · transfer to the service line with a
+message-taking fallback · services catalog + inbound settings · Handoffs queue + inbound stats
+(identified vs. anonymous) · inbound calls in the Calls list with recording/transcript.
+
 **Not yet wired:** Insights/conversation-intelligence (`call_analyses`) · real myKaarma adapter ·
 RO/shown re-import loop · appointment reminder scheduling (booked path creates the soft appointment;
-timed reminders land with the reminder job).
+timed reminders land with the reminder job) · **real "where is my car" answers** (needs myKaarma
+repair-order status; until then the agent always transfers) · `verbal_verify` inbound identification
+(the setting exists; the in-call verification flow doesn't).

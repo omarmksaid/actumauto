@@ -63,13 +63,16 @@ async function handleTelnyxEvent(payload: any): Promise<void> {
 async function handleEndOfCall(eventId: string, touchpointId: string | null, msg: any): Promise<void> {
   const vapiCallId: string | null = msg.call?.id ?? null;
 
-  // Locate the touchpoint (metadata first, else via the call row we created on confirm).
-  let tpId = touchpointId;
-  if (!tpId && vapiCallId) {
-    const { data } = await supabaseAdmin.from("calls")
-      .select("touchpoint_id").eq("vapi_call_id", vapiCallId).maybeSingle();
-    tpId = data?.touchpoint_id ?? null;
-  }
+  // The call row: for outbound it was created on confirm; for inbound (§16) at assistant-request.
+  // Read company_id/direction from it so INBOUND calls — which have no touchpoint — still get
+  // their recording, cost, and transcript stored.
+  const { data: callRow } = vapiCallId
+    ? await supabaseAdmin.from("calls")
+        .select("touchpoint_id, company_id, customer_id, direction").eq("vapi_call_id", vapiCallId).maybeSingle()
+    : { data: null };
+
+  // Locate the touchpoint (metadata first, else via the call row). Inbound has none.
+  const tpId = touchpointId ?? callRow?.touchpoint_id ?? null;
 
   const { data: tp } = tpId
     ? await supabaseAdmin.from("touchpoints").select("*").eq("id", tpId).maybeSingle()
@@ -82,8 +85,9 @@ async function handleEndOfCall(eventId: string, touchpointId: string | null, msg
   // STRUCTURED outcome: prefer Vapi analysis + explicit function calls over transcript parsing.
   const outcome = deriveOutcome(msg);
 
-  // Upsert the call row.
-  const companyId = tp?.company_id;
+  // Upsert the call row. Prefer the touchpoint's company (outbound) but fall back to the call row.
+  const companyId = tp?.company_id ?? callRow?.company_id;
+  const customerId = tp?.customer_id ?? callRow?.customer_id ?? null;
   if (vapiCallId && companyId) {
     await supabaseAdmin.from("calls").update({
       recording_url: recordingUrl, duration_sec: durationSec,
@@ -92,12 +96,13 @@ async function handleEndOfCall(eventId: string, touchpointId: string | null, msg
     }).eq("vapi_call_id", vapiCallId);
 
     await recordCost({
-      companyId, touchpointId: tpId, customerId: tp?.customer_id,
-      category: "voice", amountUsd: costUsd, meta: { vapiCallId, durationSec },
+      companyId, touchpointId: tpId, customerId,
+      category: "voice", amountUsd: costUsd,
+      meta: { vapiCallId, durationSec, direction: callRow?.direction ?? "outbound" },
     });
 
-    // Store the transcript turns for playback + FTS.
-    await storeTranscript(companyId, vapiCallId, tp?.customer_id ?? null, msg);
+    // Store the transcript turns for playback + FTS (identical for inbound and outbound).
+    await storeTranscript(companyId, vapiCallId, customerId, msg);
   }
 
   // Apply the structured outcome to the cadence engine (retries, fallbacks, reminders, opt-out).

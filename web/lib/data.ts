@@ -52,12 +52,18 @@ export const demoFunnel = {
 export interface CallRow {
   id: string; vapi_call_id: string | null; duration_sec: number | null;
   outcome: string | null; cost_usd: number | null; created_at: string;
+  /** Inbound service-line calls (§16) have no touchpoint and may have no customer. */
+  direction?: "inbound" | "outbound";
+  from_number?: string | null;
   customers: { full_name: string; phone: string | null } | null;
 }
 export const demoCalls: CallRow[] = [
   { id: "c1", vapi_call_id: "v1", duration_sec: 132, outcome: "booked", cost_usd: 0.29, created_at: "2026-08-16T16:10:00Z", customers: { full_name: "Maria Chen", phone: "+14085550142" } },
   { id: "c2", vapi_call_id: "v2", duration_sec: 41, outcome: "declined", cost_usd: 0.09, created_at: "2026-08-16T16:02:00Z", customers: { full_name: "Devon Park", phone: "+14085550199" } },
   { id: "c3", vapi_call_id: "v3", duration_sec: 0, outcome: "no_answer", cost_usd: 0.02, created_at: "2026-08-16T15:50:00Z", customers: { full_name: "Priya Nair", phone: "+14085550188" } },
+  // Inbound service-line calls (§16): identified by caller ID, or anonymous when the number misses.
+  { id: "c4", vapi_call_id: "v4", direction: "inbound", from_number: "+14085550142", duration_sec: 214, outcome: "answered", cost_usd: 0.41, created_at: "2026-08-17T15:42:00Z", customers: { full_name: "Maria Chen", phone: "+14085550142" } },
+  { id: "c5", vapi_call_id: "v5", direction: "inbound", from_number: "+14085550177", duration_sec: 96, outcome: "answered", cost_usd: 0.19, created_at: "2026-08-17T15:20:00Z", customers: null },
 ];
 
 export const demoCallDetail = {
@@ -125,4 +131,66 @@ export const demoCustomer = {
   recentCalls: [{ id: "c1", outcome: "booked", duration_sec: 132, created_at: "2026-08-16T16:10:00Z" }],
   recentMessages: [{ channel: "sms", direction: "outbound", content: "Hi Maria, your RAV4 is due for service…", created_at: "2026-08-10T18:00:00Z" }],
   appointments: [{ id: "a1", status: "pending_confirmation", starts_at: null, preferred_time: "Tuesday morning", created_at: "2026-08-16T16:10:00Z" }],
+};
+
+// ── Inbound service line (§16) ──────────────────────────────────────────────
+
+// apiCall("/agent/inbound/stats")
+export const demoInboundStats = {
+  inbound: {
+    total: 84, identified: 51, anonymous: 33, ambiguous: 7,
+    identify_rate: 0.607, cost_usd: 18.42,
+  },
+  handoffs: {
+    total: 29, open: 11, needs_callback: 3,
+    by_reason: { where_is_my_car: 14, pricing: 8, requested_human: 4, complaint: 2, out_of_scope: 1 },
+  },
+};
+
+// apiCall("/agent/handoffs")
+export interface HandoffRow {
+  id: string;
+  call_id: string | null;
+  customer_id: string | null;
+  caller_number: string | null;
+  reason: string;
+  vehicle_hint: string | null;
+  notes: string | null;
+  transferred: boolean;
+  status: "open" | "resolved";
+  created_at: string;
+  customers: { full_name: string; phone: string | null } | null;
+}
+export const demoHandoffs: HandoffRow[] = [
+  { id: "h1", call_id: "c1", customer_id: "cust1", caller_number: "+14085550142", reason: "where_is_my_car", vehicle_hint: "silver RAV4", notes: "Dropped off Tuesday, asking if it's ready.", transferred: true, status: "open", created_at: "2026-08-17T15:42:00Z", customers: { full_name: "Maria Chen", phone: "+14085550142" } },
+  { id: "h2", call_id: "c4", customer_id: null, caller_number: "+14085550177", reason: "pricing", vehicle_hint: "2018 Camry", notes: "Wants a quote on front brakes.", transferred: false, status: "open", created_at: "2026-08-17T15:20:00Z", customers: null },
+  { id: "h3", call_id: "c5", customer_id: "cust2", caller_number: "+14085550199", reason: "requested_human", vehicle_hint: null, notes: "Asked for their advisor by name.", transferred: true, status: "open", created_at: "2026-08-17T14:05:00Z", customers: { full_name: "Devon Park", phone: "+14085550199" } },
+  { id: "h4", call_id: "c6", customer_id: null, caller_number: "+14085550163", reason: "complaint", vehicle_hint: null, notes: "Unhappy with last visit.", transferred: false, status: "open", created_at: "2026-08-17T11:31:00Z", customers: null },
+];
+
+// apiCall("/settings/services")
+export interface ServiceOffering {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  operations: string[];
+  typical_duration_min: number | null;
+  active: boolean;
+}
+export const demoServices: ServiceOffering[] = [
+  { id: "s1", name: "Oil & filter change", description: "Full synthetic oil and filter replacement with a multi-point inspection.", category: "maintenance", operations: ["LOF"], typical_duration_min: 45, active: true },
+  { id: "s2", name: "Tire rotation & balance", description: "Rotate and balance all four tires, set pressures.", category: "tires", operations: ["ROT", "BAL"], typical_duration_min: 40, active: true },
+  { id: "s3", name: "Brake pad replacement", description: "Front or rear pad replacement with rotor inspection.", category: "repair", operations: ["BRK-F", "BRK-R"], typical_duration_min: 120, active: true },
+  { id: "s4", name: "Wheel alignment", description: "Four-wheel alignment to factory spec.", category: "repair", operations: ["ALN"], typical_duration_min: 90, active: true },
+  { id: "s5", name: "Multi-point inspection", description: "Complimentary inspection of brakes, fluids, belts, and tires.", category: "inspection", operations: ["MPI"], typical_duration_min: 30, active: true },
+  { id: "s6", name: "Cabin & engine air filter", description: "Replace cabin and engine air filters.", category: "maintenance", operations: ["CAF", "EAF"], typical_duration_min: 25, active: true },
+];
+
+export const demoInboundSettings = {
+  transfer_number: "+14085550100",
+  identify_mode: "caller_id_only" as const,
+  greeting: "",
+  persona_prompt: "",
+  voice: null,
 };

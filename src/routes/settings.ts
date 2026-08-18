@@ -31,6 +31,15 @@ settingsRoutes.get("/", async (c) => {
     voice: settings.voice ?? { provider: "cartesia", voice_id: "" },
     persona_prompt: settings.persona_prompt ?? "",
     customer_types: settings.customer_types ?? ["loyal", "lapsed", "new", "vip"],
+    // Inbound service line (§16). identify_mode defaults to caller_id_only: unmatched callers
+    // get generic answers only and never have data read to them.
+    inbound: {
+      transfer_number: settings.inbound?.transfer_number ?? "",
+      identify_mode: settings.inbound?.identify_mode ?? "caller_id_only",
+      greeting: settings.inbound?.greeting ?? "",
+      persona_prompt: settings.inbound?.persona_prompt ?? "",
+      voice: settings.inbound?.voice ?? null,   // null ⇒ inherit the outbound voice
+    },
   });
 });
 
@@ -59,16 +68,80 @@ settingsRoutes.put("/", requireAdmin, async (c) => {
     else await supabaseAdmin.from("cadences").insert({ company_id: companyId, ...allowed });
   }
 
-  if (body.voice || body.persona_prompt != null || body.customer_types) {
+  if (body.voice || body.persona_prompt != null || body.customer_types || body.inbound) {
     const { data: company } = await supabaseAdmin
       .from("companies").select("settings").eq("id", companyId).single();
     const settings = { ...(company?.settings ?? {}) } as any;
     if (body.voice) settings.voice = body.voice;
     if (body.persona_prompt != null) settings.persona_prompt = body.persona_prompt;
     if (body.customer_types) settings.customer_types = body.customer_types;
+
+    if (body.inbound) {
+      const inb = body.inbound;
+      const next = { ...(settings.inbound ?? {}) };
+      if (inb.transfer_number != null) next.transfer_number = String(inb.transfer_number).trim();
+      // Whitelisted — an arbitrary value here would change who the agent reads data to (§16a).
+      if (inb.identify_mode && ["caller_id_only", "verbal_verify"].includes(inb.identify_mode)) {
+        next.identify_mode = inb.identify_mode;
+      }
+      if (inb.greeting != null) next.greeting = String(inb.greeting);
+      if (inb.persona_prompt != null) next.persona_prompt = String(inb.persona_prompt);
+      if (inb.voice !== undefined) next.voice = inb.voice;
+      settings.inbound = next;
+    }
+
     await supabaseAdmin.from("companies").update({ settings }).eq("id", companyId);
   }
 
+  return c.json({ ok: true });
+});
+
+// ── Services catalog: "the services we own" (§16c) ───────────────────────────
+// Structured and dealership-edited. No price column by design — the no-invented-pricing guardrail
+// holds on inbound, and a quoted price is a commitment the dealership has to honor.
+settingsRoutes.get("/services", async (c) => {
+  const companyId = cid(c);
+  const { data } = await supabaseAdmin
+    .from("service_offerings").select("*").eq("company_id", companyId)
+    .order("category", { ascending: true }).order("name", { ascending: true });
+  return c.json({ services: data ?? [] });
+});
+
+settingsRoutes.post("/services", requireAdmin, async (c) => {
+  const companyId = cid(c);
+  const b = await c.req.json<any>();
+  if (!b.name?.trim()) return c.json({ error: "name required" }, 422);
+  const { data, error } = await supabaseAdmin.from("service_offerings").insert({
+    company_id: companyId,
+    name: b.name.trim(),
+    description: b.description ?? null,
+    category: b.category ?? null,
+    operations: Array.isArray(b.operations) ? b.operations : [],
+    typical_duration_min: b.typical_duration_min ?? null,
+    active: b.active ?? true,
+  }).select("*").maybeSingle();
+  if (error) return c.json({ error: error.message }, 400);
+  return c.json({ service: data });
+});
+
+settingsRoutes.patch("/services/:id", requireAdmin, async (c) => {
+  const companyId = cid(c);
+  const b = await c.req.json<any>();
+  const patch: any = { updated_at: new Date().toISOString() };
+  for (const k of ["name", "description", "category", "operations", "typical_duration_min", "active"]) {
+    if (k in b) patch[k] = b[k];
+  }
+  const { data, error } = await supabaseAdmin.from("service_offerings")
+    .update(patch).eq("id", c.req.param("id")).eq("company_id", companyId).select("*").maybeSingle();
+  if (error) return c.json({ error: error.message }, 400);
+  if (!data) return c.json({ error: "not found" }, 404);
+  return c.json({ service: data });
+});
+
+settingsRoutes.delete("/services/:id", requireAdmin, async (c) => {
+  const companyId = cid(c);
+  await supabaseAdmin.from("service_offerings")
+    .delete().eq("id", c.req.param("id")).eq("company_id", companyId);
   return c.json({ ok: true });
 });
 

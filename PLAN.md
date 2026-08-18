@@ -1,11 +1,18 @@
 # Touchpoint Center — Architecture & Build Plan
 
-AI service-reminder platform for auto-dealership **service departments**. Dealerships upload
-a CSV of past customers + car info; the system profiles each customer, computes when service
-is due (from purchase date + mileage against a per-model service schedule), and **schedules
-outbound AI voice calls** (plus SMS/email follow-ups) to bring them in for service. Humans get
-a dashboard of the funnel, can play back any call recording + read transcripts, look up any
-customer in a searchable directory, and book appointments into myKaarma.
+AI platform for auto-dealership **service departments**, covering **both directions**:
+
+- **Outbound (service reminders):** dealerships upload a CSV of past customers + car info; the
+  system profiles each customer, computes when service is due (from purchase date + mileage
+  against a per-model service schedule), and **schedules outbound AI voice calls** (plus SMS/email
+  follow-ups) to bring them in for service.
+- **Inbound (service line):** service calls coming into the dealership route to the agent, which
+  identifies the caller from their phone number, answers questions about **the services we own**,
+  tells them **what's coming up on their cars** and recommends it, and **transfers to a service
+  employee** for anything it shouldn't answer — above all "where is my car" (§16).
+
+Humans get a dashboard of the funnel, can play back any call recording + read transcripts, look up
+any customer in a searchable directory, and book appointments into myKaarma.
 
 Forked from realtyAI's architecture (Node/Hono + pg-boss + Supabase; Next.js 14 dashboard),
 **stripping WhatsApp and inbound-lead webhooks**, and reshaping around **CSV ingestion +
@@ -452,6 +459,11 @@ voices) · campaigns · `BookingProvider` **soft mode** + in-call book tool (mul
 **RO/shown loop** (tagged notes + RO re-import) · advisor-queue auto-flags + prompt-regression
 replay (§14d) · admin portal · real myKaarma adapter (on docs) · extensible ingest.
 
+**Slice 9 — inbound service line (§16).** Independent of the outbound slices (it consumes calls
+rather than placing them), so it can ship in parallel: caller identification → inbound assistant +
+tools → services catalog → transfer + handoff queue → inbound stats. Its blocking external
+dependency is only that the dealership's service line be pointed at a Vapi number.
+
 ---
 
 ## 11. Open items to confirm as we build
@@ -660,3 +672,126 @@ quarterly.*
 **Unchanged (deliberately):** Vapi as orchestrator (the ~$0.05/min fee buys the whole pipeline —
 STT/LLM/TTS glue, recording, webhooks), **Deepgram STT** (already cheapest), Supabase Pro (PITR
 requires it, §9), Railway, Resend, Voyage.
+
+---
+
+## 16. Inbound service line (the agent answers the dealership's calls)
+
+Service calls coming into the dealership route to this agent. It answers questions about the
+services we own, identifies the caller from their phone number, tells them what's coming up on
+their cars and recommends it, and hands off to a service employee for anything else.
+
+**This inverts three assumptions the outbound design is built on**, which is why it's its own
+subsystem rather than a flag on the existing path:
+
+| Outbound (§4–§5) | Inbound (§16) |
+|---|---|
+| We choose the customer; prompt assembled **before** the call | Caller unknown until connect → **lookup by caller ID at call time** |
+| Prompt fixed for the call's duration | Agent **queries mid-call** via tools (their cars, what's due, our services) |
+| Goal: book a reminder | Goal: **answer**, recommend due service, **transfer** when out of scope |
+| A `touchpoint` exists before the call | **No touchpoint** — a call with no scheduled work behind it |
+| Failure mode: duplicate dials | Failure mode: **wrong customer identified**, or a dead-end question |
+
+### 16a. Identification — caller ID only, generic otherwise
+
+Vapi's inbound webhook carries the caller's E.164. We look it up against `customers.phone`
+(scoped to the dealership that owns the receiving number, via `phone_numbers`).
+
+- **Exactly one match →** *identified*. The agent gets that customer's profile, vehicles, and due
+  service, and may discuss them.
+- **Zero matches, or more than one →** *anonymous*. The agent answers **generic questions only**
+  (services offered, hours, general guidance) and **never reads any customer-specific data**. It
+  offers a transfer for anything needing an account.
+
+Multiple matches deliberately fall to anonymous: a shared household/work number must not cause the
+agent to read the wrong person's vehicle history. **Privacy rule (hardcoded guardrail):** no
+customer-specific field is ever placed in an anonymous call's prompt or returned by its tools —
+the isolation is enforced in the tool layer, not just in prompt wording.
+
+Configurable per dealership as `settings.inbound.identify_mode`:
+- **`caller_id_only`** (default, chosen) — as above.
+- `verbal_verify` (built later, no schema change) — on a lookup miss, ask name + a second factor
+  (plate / VIN last 6) and re-look-up. Deliberately deferred; the setting exists so enabling it is
+  config, not a migration.
+
+### 16b. "Where is my car" → transfer to the service line
+
+A caller asking where their car is, or when it will be ready, is asking about a **repair order in
+progress — data this system does not have** (no RO/work-in-progress table; `appointments` models
+future visits, not current ones). The agent must therefore **never attempt an answer**; it detects
+the intent and transfers.
+
+- **Warm transfer** to the dealership's service line (`settings.inbound.transfer_number`), which is
+  staffed and expected to pick up.
+- **Fallback if the transfer doesn't connect** (no answer / busy / after hours): capture name,
+  vehicle, callback number and reason into a `handoff_requests` row for an advisor to work, and
+  tell the caller they'll be called back. "Should pick up" is an expectation, not a guarantee — an
+  unanswered transfer must not drop the caller.
+- Same path for any **out-of-scope** intent: complaints, billing/warranty disputes, anything the
+  agent is unsure of, and an explicit request for a human ([HANDOFF]).
+
+### 16c. Services catalog (what we own) — structured, no prices
+
+A **`service_offerings`** table per dealership (`name`, `description`, `category`, `operations[]`,
+`typical_duration_min`, `active`), edited in Settings. The agent answers "do you do X" from this
+catalog only.
+
+**Prices stay out.** The §8 no-invented-pricing guardrail holds on inbound: the agent describes
+what a service is and what's involved, and routes cost questions to an advisor. A quoted price is a
+customer-facing commitment the dealership has to honor, so it isn't the agent's to make. (A priced
+variant is a column + a guardrail flip later if the dealership wants it.)
+
+This is **not** RAG — a structured table is controllable and can't surface stale contradictory doc
+text. Document RAG remains available for outbound (§5) and can layer in later.
+
+### 16d. Recommending due service
+
+On an **identified** call, the agent **answers the caller's question first**, then raises what's
+coming due on their vehicle(s) and offers to book. Reuses `computeDue` (§4) unchanged — the same
+engine that drives outbound slotting, called live instead of on a cron. Never leads with the
+recommendation: this is the caller's agenda, not ours.
+
+Booking on inbound uses the **same `BookingProvider`** and the same mode-gated wording (§2), so in
+`soft` mode the agent captures a preferred time and promises confirmation — it never claims a firm
+slot it didn't reserve.
+
+### 16e. Mechanics
+
+- **Inbound assistant + tools.** Vapi's `assistant-request` webhook fires on an incoming call; we
+  respond **synchronously** with an assistant config whose system prompt is assembled from the
+  identified (or anonymous) context. Four tools, all **server-side and tenant-scoped**:
+  `lookup_services`, `get_my_vehicles`, `get_due_service`, `book_service`, plus Vapi's native
+  `transferCall`. **No tool accepts a `company_id` or `customer_id` from the model** (§8 invariant
+  2 extended to inbound) — identity is resolved server-side from the call id and pinned to the
+  call. This is the mechanism that makes the anonymous case safe.
+- **Inbound calls are first-class rows.** `calls` gains `direction` ('outbound'|'inbound') and
+  `from_number`; `touchpoint_id` is already nullable, so an inbound call simply has none. The
+  end-of-call webhook (§5b) path is reused as-is — transcripts, recording, cost, and `call_analyses`
+  all work unchanged for inbound.
+- **`handoff_requests`** — `company_id`, `call_id`, `customer_id` (nullable), `caller_number`,
+  `reason` ('where_is_my_car'|'pricing'|'complaint'|'requested_human'|'out_of_scope'|'other'),
+  `vehicle_hint`, `notes`, `status` ('open'|'resolved'), surfaced as an advisor queue in the
+  dashboard.
+- **Dashboard:** inbound calls appear in the existing Calls list (with a direction filter and
+  playback) and a new **Handoffs** queue. Settings gains the services catalog + inbound config
+  (transfer number, identify mode, greeting).
+
+### 16f. What inbound does NOT touch
+
+Inbound places no outbound calls, so the dispatch protocol (§4b), reconciler (§4c), number-pool
+caps/warm-up, quiet hours, and the kill switches are all **irrelevant to it** — it consumes a call
+that already exists. The cost caps (§12c) still apply via the shared spend ceiling, and inbound
+minutes must be added to the pilot cost model: **inbound volume is not something we pace**, so it's
+the one uncapped-by-design cost line and is worth watching in `daily_health`.
+
+### 16g. Open items for inbound
+
+- **Real answer for "where is my car" needs RO data.** Transfer is right for the pilot, but the
+  high-value version is a myKaarma RO-status read. Same `BookingProvider`-style abstraction; blocked
+  on the same API access.
+- **Match rate is the metric that decides whether `caller_id_only` survives.** Log identified vs.
+  anonymous per inbound call from day one — if anonymous is a large share, `verbal_verify` becomes
+  the pragmatic default (the setting is already there).
+- Transfer-failure rate — if the service line frequently doesn't pick up, the fallback queue
+  becomes the primary path and needs an SLA.
+- After-hours behavior: currently message-capture; a dealership may prefer a different greeting.

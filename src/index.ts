@@ -9,6 +9,7 @@ import { campaignRoutes } from "./routes/campaigns";
 import { teamRoutes, acceptInvite, lookupInvite } from "./routes/team";
 import { vapiWebhooks } from "./routes/webhooks/vapi";
 import { telnyxWebhooks } from "./routes/webhooks/telnyx";
+import { inboundRoutes } from "./routes/inbound";
 import { supabaseAdmin } from "./lib/supabase";
 import { startWorker, stopWorker } from "./jobs/worker";
 
@@ -25,6 +26,10 @@ app.get("/health", (c) => c.json({ ok: true }));
 // ── Webhooks (provider-authenticated, NOT requireAuth) ──
 app.route("/webhooks", vapiWebhooks);     // /webhooks/vapi   (thin durable handler, §5b)
 app.route("/webhooks", telnyxWebhooks);   // /webhooks/telnyx (SMS status + inbound STOP)
+
+// ── Inbound service line (§16) — provider-authenticated via the Vapi shared secret.
+// Answers synchronously (assistant config + in-call tools), so it is NOT a durable-inbox path.
+app.route("/inbound", inboundRoutes);     // /inbound/assistant, /inbound/tools
 
 // ── Unsubscribe (public, atomic opt-out) ──
 app.get("/u/:customerId", async (c) => {

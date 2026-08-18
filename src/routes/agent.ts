@@ -49,16 +49,83 @@ agentRoutes.get("/funnel", async (c) => {
   return c.json({ funnel, appointments, numbers: numbers ?? [] });
 });
 
-// ── Calls list ───────────────────────────────────────────────────────────────
+// ── Calls list (both directions; ?direction=inbound|outbound filters) ────────
 agentRoutes.get("/calls", async (c) => {
   const companyId = cid(c);
-  const { data } = await supabaseAdmin
+  const direction = c.req.query("direction");
+  let q = supabaseAdmin
     .from("calls")
-    .select("id, customer_id, vapi_call_id, duration_sec, outcome, cost_usd, created_at, customers(full_name, phone)")
-    .eq("company_id", companyId)
-    .order("created_at", { ascending: false })
-    .limit(100);
+    .select("id, customer_id, vapi_call_id, direction, from_number, duration_sec, outcome, cost_usd, created_at, customers(full_name, phone)")
+    .eq("company_id", companyId);
+  if (direction === "inbound" || direction === "outbound") q = q.eq("direction", direction);
+  const { data } = await q.order("created_at", { ascending: false }).limit(100);
   return c.json({ calls: data ?? [] });
+});
+
+// ── Inbound stats (§16g) — identified vs. anonymous is the metric that decides
+// whether caller-ID-only identification survives, so it's surfaced from day one.
+agentRoutes.get("/inbound/stats", async (c) => {
+  const companyId = cid(c);
+  const [{ data: calls }, { data: handoffs }] = await Promise.all([
+    supabaseAdmin.from("calls")
+      .select("customer_id, metadata, duration_sec, cost_usd")
+      .eq("company_id", companyId).eq("direction", "inbound"),
+    supabaseAdmin.from("handoff_requests")
+      .select("reason, status, transferred").eq("company_id", companyId),
+  ]);
+
+  const c_ = calls ?? [];
+  const identified = c_.filter((x) => !!x.customer_id).length;
+  // Ambiguous (>1 phone match) is tracked apart from "no match": it's the shared-number case,
+  // and a high rate is the argument for turning on verbal verification.
+  const ambiguous = c_.filter((x) => Number((x.metadata as any)?.match_count ?? 0) > 1).length;
+
+  const h = handoffs ?? [];
+  const byReason: Record<string, number> = {};
+  for (const row of h) byReason[row.reason] = (byReason[row.reason] ?? 0) + 1;
+
+  return c.json({
+    inbound: {
+      total: c_.length,
+      identified,
+      anonymous: c_.length - identified,
+      ambiguous,
+      identify_rate: c_.length ? Number((identified / c_.length).toFixed(3)) : null,
+      cost_usd: Number(c_.reduce((s, x) => s + Number(x.cost_usd ?? 0), 0).toFixed(2)),
+    },
+    handoffs: {
+      total: h.length,
+      open: h.filter((x) => x.status === "open").length,
+      // Transfer didn't connect → an advisor owes this caller a callback.
+      needs_callback: h.filter((x) => x.status === "open" && !x.transferred).length,
+      by_reason: byReason,
+    },
+  });
+});
+
+// ── Handoff queue (§16b) — callers the agent sent to a human ─────────────────
+agentRoutes.get("/handoffs", async (c) => {
+  const companyId = cid(c);
+  const status = c.req.query("status") ?? "open";
+  let q = supabaseAdmin
+    .from("handoff_requests")
+    .select("id, call_id, customer_id, caller_number, reason, vehicle_hint, notes, transferred, status, created_at, customers(full_name, phone)")
+    .eq("company_id", companyId);
+  if (status !== "all") q = q.eq("status", status);
+  const { data } = await q.order("created_at", { ascending: false }).limit(100);
+  return c.json({ handoffs: data ?? [] });
+});
+
+agentRoutes.patch("/handoffs/:id", async (c) => {
+  const companyId = cid(c);
+  const b = await c.req.json<any>().catch(() => ({}));
+  const status = b.status === "resolved" ? "resolved" : "open";
+  const { data, error } = await supabaseAdmin.from("handoff_requests")
+    .update({ status, resolved_at: status === "resolved" ? new Date().toISOString() : null })
+    .eq("id", c.req.param("id")).eq("company_id", companyId).select("*").maybeSingle();
+  if (error) return c.json({ error: error.message }, 400);
+  if (!data) return c.json({ error: "not found" }, 404);
+  return c.json({ handoff: data });
 });
 
 // ── One call: transcript turns + a signed recording URL ──────────────────────
