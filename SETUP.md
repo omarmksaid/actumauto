@@ -1,10 +1,10 @@
 # Touchpoint Center — Setup & Configuration
 
-Everything you need to take the current code from "typechecks locally" to "places a real call."
-Ordered by dependency + lead time. See `PLAN.md` for the why behind each choice.
+Everything you need to take the current code from "typechecks locally" to "answers a real call."
+Ordered by dependency. See `PLAN.md` for the why behind each choice.
 
-> **Start the one item with a clock today:** Telnyx A2P 10DLC registration (step 5) takes
-> **1–4 weeks and does not transfer between providers.** Nothing else has a lead time.
+> **This system is INBOUND ONLY** — it answers the dealership's service line. It does not place
+> calls or send SMS, so there is **no A2P 10DLC registration to wait on**.
 
 ---
 
@@ -12,8 +12,8 @@ Ordered by dependency + lead time. See `PLAN.md` for the why behind each choice.
 - Node 20+, npm.
 - A GitHub repo (for Railway deploy).
 - Accounts you'll create below: Supabase (Pro), Telnyx, Vapi, Anthropic, a TTS provider
-  (Cartesia or Deepgram), Resend, Voyage. myKaarma is **not** needed yet (booking runs in
-  `soft` mode until you have it).
+  (Cartesia or Deepgram). myKaarma is **not** needed yet (booking runs in `soft` mode until you
+  have it). Resend is optional — transactional email exists but nothing calls it yet.
 
 ---
 
@@ -25,6 +25,7 @@ Ordered by dependency + lead time. See `PLAN.md` for the why behind each choice.
    - `supabase/migrations/0001_init.sql`
    - `supabase/migrations/0002_dispatch_rpcs.sql`
    - `supabase/migrations/0003_invite_expiry.sql`  (team invites need `invites.expires_at`)
+   - `supabase/migrations/0004_inbound.sql`  (caller identification, services catalog, handoffs)
    - `supabase/seed.example.sql`  (buckets, `create_workspace` RPC, global Toyota schedule)
 4. Grab these from **Project Settings**:
    - **Project URL** → `SUPABASE_URL` and (web) `NEXT_PUBLIC_SUPABASE_URL`
@@ -36,7 +37,7 @@ Ordered by dependency + lead time. See `PLAN.md` for the why behind each choice.
        long-lived connections that break *silently* in transaction mode (symptom: jobs never run).
 
 ### Create your first dealership
-Sign up a user in Supabase Auth, then in the SQL editor run `select create_workspace('Milpitas Toyota','America/Los_Angeles');` **while authenticated as that user** (or insert `companies` + `memberships` + a `cadences` row by hand — see the commented block at the bottom of `seed.example.sql`).
+Sign up a user in Supabase Auth, then in the SQL editor run `select create_workspace('Milpitas Toyota','America/Los_Angeles');` **while authenticated as that user** (or insert `companies` + `memberships` by hand — see the commented block at the bottom of `seed.example.sql`).
 
 ---
 
@@ -90,29 +91,33 @@ to revisit that setting.
 
 ---
 
-## 5. Telnyx (telephony — voice numbers + SMS) — **START THE 10DLC NOW**
+## 5. Telnyx (the phone number callers dial)
+
 1. Create a Telnyx account → **API key** → `TELNYX_API_KEY`.
-2. Create a **Messaging Profile** → `TELNYX_MESSAGING_PROFILE_ID` (for SMS, used in a later slice).
-3. **Buy one or more phone numbers.**
-4. **Submit A2P 10DLC brand + campaign registration immediately** — 1–4 week approval, blocks SMS at
-   volume, non-transferable. Do this before anything else time-wise.
-5. Also queue up (not blocking, but improves answer rate at volume): **SHAKEN/STIR attestation** and
-   **CNAM = the dealership's name** (e.g. "Milpitas Toyota") per number; Free Caller Registry.
-6. Add each number to the DB `phone_numbers` table for the dealership (`e164`, `provider='telnyx'`,
-   `vapi_phone_id`, `enabled=true`, `daily_cap`, `weight`, `ramp_started_on=today`).
+2. **Buy the phone number** that will receive service calls.
+3. Optionally set **CNAM** to the dealership's name and register **SHAKEN/STIR** — these help
+   outgoing identity; for a purely inbound line they're cosmetic.
+4. Import the number into Vapi (step 3) to get its `vapi_phone_id`.
+5. Add the number in the dashboard (**Settings → Numbers that route to the agent**), or insert into
+   `phone_numbers` (`e164`, `provider='telnyx'`, `vapi_phone_id`, `enabled=true`). **The `e164` must
+   match what Vapi reports as the dialed number** — that mapping is how we know which dealership was
+   called.
+
+> No A2P 10DLC registration is required: we don't send SMS.
 
 ---
 
-## 6. Resend + Voyage (email + embeddings)
-- **Resend**: API key → `RESEND_API_KEY`, a verified sender → `EMAIL_FROM`. (Email fallback slice.)
-- **Voyage**: API key → `VOYAGE_API_KEY`. (RAG ingest slice.)
+## 6. Resend (optional — transactional email)
+- **Resend**: API key → `RESEND_API_KEY`, a verified sender → `EMAIL_FROM`.
+- Optional today: `src/notify/email.ts` is ready but nothing calls it yet. Skip unless you're
+  wiring booking confirmations.
 
 ---
 
 ## 7. Local run
 ```bash
 # Backend (API + worker)
-cp .env.example .env      # fill in values from steps 1–6
+cp .env.example .env      # fill in values from steps 1–5
 npm install
 npm run dev               # http://localhost:3000  (GET /health → {"ok":true})
 
@@ -145,23 +150,29 @@ config) — useful for UI work. Set the web env vars to hit the real backend.
 - Build: `npm install && npm run build` · Start: `npm start`
 - Variables: the three `NEXT_PUBLIC_*` web vars (API URL = Service 1's domain).
 
-**Scaling:** the code is already safe to run as multiple replicas — the scheduler claims work with
-`FOR UPDATE SKIP LOCKED` and every side effect is idempotent via the claim/reconcile machinery
-(PLAN.md §8). No leader election needed.
+**Scaling:** inbound work is request-shaped — Vapi calls `/inbound/assistant` and `/inbound/tools`
+synchronously — so replicas scale horizontally with no coordination. The only background work is
+the CSV import and the webhook processor, both claimed through pg-boss.
 
 ---
 
-## 9. Pre-first-live-campaign checklist (PLAN.md §10 Step 8)
-Before pointing this at real customers:
-- [ ] 10DLC approved (step 5).
-- [ ] At least one `phone_numbers` row with a valid `vapi_phone_id`, `ramp_started_on` set.
-- [ ] `global_settings` caps sane for a pilot: `max_concurrent_calls=10`, daily/monthly spend caps.
-- [ ] A `cadences` row for the dealership (quiet hours in the dealership timezone).
-- [ ] A service schedule that matches your customers' vehicles (the seed covers gas Toyota).
-- [ ] **Chaos test:** in staging, kill the worker mid-batch, restart, confirm **zero duplicate
-      dials** (this validates the claim/reconcile core).
-- [ ] Kill switch verified: flip `global_settings.global_dial_enabled=false` and confirm dialing
-      stops within a dispatch cycle.
+## 9. Before you point the real service line at it
+
+- [ ] A `phone_numbers` row whose `e164` matches the number Vapi reports as dialed, with a valid
+      `vapi_phone_id`. **Without this the agent returns 404 and won't answer.**
+- [ ] **Transfer number set** (Settings → Inbound service line). Without it the agent can only take
+      a message — and "where is my car" is the most common reason people call.
+- [ ] **Services catalog populated.** An empty catalog means every service question gets transferred.
+- [ ] A service schedule matching your customers' vehicles (the seed covers gas Toyota) — this is
+      what the agent reads to say what's due.
+- [ ] A CSV imported, so callers are actually recognized. Spot-check that phone numbers landed in a
+      consistent format; identification matches on the last 10 digits.
+- [ ] `global_settings` spend caps set for a pilot.
+- [ ] **Place a test call yourself** from a number that IS in the database, and one that isn't.
+      Confirm: the known caller is greeted by name and hears a correct due-service recommendation;
+      the unknown caller gets general answers only and is never told about anyone's vehicle.
+- [ ] **Test the transfer**, including the case where nobody picks up — confirm a `handoff_requests`
+      row appears with `transferred=false` so the caller is recoverable.
 
 ---
 
