@@ -2,7 +2,11 @@
   "name": "touchpoint-center-web",
   "version": "0.1.0",
   "private": true,
-  "scripts": { "dev": "next dev -p 3001", "build": "next build", "start": "next start" },
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p ${PORT:-3001}"
+  },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.47.0",
@@ -14,5 +18,8 @@
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.17",
     "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

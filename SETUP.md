@@ -159,19 +159,66 @@ config) — useful for UI work. Set the web env vars to hit the real backend.
 ---
 
 ## 8. Railway deploy (two services, one repo)
-**Service 1 — API + worker** (repo root):
-- Build: `npm install && npm run build` · Start: `npm start` · Health check: `/health`
-- Variables: everything from `.env`. Set `APP_URL` to this service's generated domain **after** you
-  generate it, then redeploy (the Vapi webhook URL is built from it).
-- `DATABASE_URL` = the **session-mode** Supabase pooler (port 5432).
 
-**Service 2 — dashboard** (root directory `web`):
-- Build: `npm install && npm run build` · Start: `npm start`
-- Variables: the three `NEXT_PUBLIC_*` web vars (API URL = Service 1's domain).
+Both services deploy from the same repo; they differ only in root directory. Railway reads
+`railway.json` (API) and `web/railway.json` (dashboard) for build and start commands.
 
-**Scaling:** inbound work is request-shaped — Vapi calls `/inbound/assistant` and `/inbound/tools`
-synchronously — so replicas scale horizontally with no coordination. The only background work is
-the CSV import and the webhook processor, both claimed through pg-boss.
+**Push to GitHub first** — Railway deploys from a repo:
+```bash
+git remote add origin https://github.com/<you>/touchpoint-center.git
+git push -u origin main
+```
+
+### Service 1 — API + worker
+
+- **Root directory:** `/` (leave blank)
+- Build and start come from `railway.json`; health check is `/health`.
+- **Variables** — copy from your `.env`, with one change:
+
+| var | value |
+|---|---|
+| `APP_URL` | **this service's Railway domain** (set after the domain exists, then redeploy) |
+| `WEB_URL` | Service 2's domain |
+| `DATABASE_URL` | Supabase **session pooler, port 5432** (not 6543) |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET` | as local |
+| `ANTHROPIC_API_KEY`, `VAPI_API_KEY`, `VAPI_WEBHOOK_SECRET` | as local |
+| `DEFAULT_TTS_PROVIDER`, `DEFAULT_VOICE_ID` | optional |
+
+`APP_URL` is a chicken-and-egg: deploy once, generate the domain under Settings → Networking,
+set `APP_URL` to it, redeploy.
+
+### Service 2 — dashboard
+
+- **Root directory:** `web`
+- **Variables:**
+
+| var | value |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase publishable key |
+| `NEXT_PUBLIC_API_URL` | **Service 1's domain** |
+
+These are inlined at BUILD time, so changing one requires a redeploy, not just a restart.
+
+### Point Vapi at the deployment
+
+The phone number still points at your laptop's tunnel. After the API is live:
+
+```bash
+APP_URL=https://your-api.up.railway.app npx tsx scripts/set-webhook-url.ts
+```
+
+Then verify:
+```bash
+curl https://your-api.up.railway.app/health          # {"ok":true}
+APP_URL=https://your-api.up.railway.app npm run preflight
+```
+
+**Run this after any deploy that changes the API domain.** If you skip it, the number keeps
+pointing at the old URL and every call fails silently — the request never reaches you, so nothing
+appears in your logs.
+
+Once deployed you can stop the local tunnel and API; the dashboard runs at Service 2's URL.
 
 ---
 
