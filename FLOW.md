@@ -252,6 +252,29 @@ and the dealership-editable persona sits inside them (Settings → inbound behav
 
 ---
 
+## 6c. Stopping the agent (kill switch)
+
+```bash
+npx tsx scripts/agent-switch.ts off    # AI stops; callers are transferred to a human
+npx tsx scripts/agent-switch.ts on     # resume
+npx tsx scripts/agent-switch.ts        # show current state
+```
+
+**OFF still answers the phone.** The caller hears one line — *"let me get you to our team right
+away"* — and is transferred. Only `log_handoff` and `transferCall` are offered; the agent cannot
+discuss services, look up an account, or book. Customer data is not even loaded.
+
+That is deliberate. Silence is worse for the caller than a handoff, and an unanswered service line
+is a lost customer either way. Takes effect on the **next** call; a call in progress finishes.
+
+A second, harder lever: set `phone_numbers.enabled = false` (Settings → Numbers). That number then
+resolves to no dealership, our endpoint returns 404, and the agent does not answer at all — Vapi
+falls back to its own handling. Use it to take a number dark entirely.
+
+The hardest stop of all is Vapi: clear the number's Server URL, and nothing reaches us.
+
+---
+
 ## 7. Guardrails (hardcoded, not editable)
 
 1. Never invent prices, promotions, or wait times

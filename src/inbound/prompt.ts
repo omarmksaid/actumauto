@@ -151,6 +151,18 @@ function offeringsBlock(ctx: InboundContext): string {
 }
 
 export function buildInboundSystemPrompt(ctx: InboundContext, bookingMode: BookingMode): string {
+  // KILL SWITCH: don't hold a conversation. Say one line and hand off. Dead air would be worse
+  // for the caller than a brief handoff, so we still answer — we just stop being an agent.
+  if (!ctx.agentEnabled) {
+    return [
+      "You are a phone attendant for a car dealership's service center.",
+      "Say exactly one short line: that you're connecting them to the service team, then",
+      "immediately call log_handoff (reason: out_of_scope) followed by transferCall.",
+      "Do NOT answer questions, look anything up, discuss services, or make small talk.",
+      "If asked anything, repeat that you're connecting them and transfer.",
+    ].join("\n");
+  }
+
   return [
     guardrails(ctx, bookingMode),
     "",
@@ -168,6 +180,9 @@ export function buildInboundSystemPrompt(ctx: InboundContext, bookingMode: Booki
 
 /** What the agent says when it picks up. */
 export function buildInboundGreeting(ctx: InboundContext): string {
+  if (!ctx.agentEnabled) {
+    return "Thanks for calling the service center — let me get you to our team right away.";
+  }
   if (ctx.greeting?.trim()) return ctx.greeting.trim();
 
   // Naming the caller AND their car is the one place identification is immediately visible, and

@@ -15,31 +15,9 @@ import type { InboundContext } from "./identify";
 import { buildInboundSystemPrompt, buildInboundGreeting } from "./prompt";
 import { getBookingProvider } from "../booking";
 
-/** Tools the inbound agent can call. The server resolves identity; these carry only intent. */
-function toolDefinitions(ctx: InboundContext) {
-  const url = `${env.APP_URL}/inbound/tools`;
-  // Vapi persists `headers`, not `secret` — a `secret` here is silently dropped and every tool
-  // call would arrive unauthenticated (same failure mode as the phone-number config, see SETUP).
-  const server = { url, headers: { "x-vapi-secret": env.VAPI_WEBHOOK_SECRET } };
-
-  const tools: any[] = [
-    {
-      type: "function",
-      function: {
-        name: "lookup_services",
-        description:
-          "Look up services this dealership offers. Use when the caller asks whether we do " +
-          "something, or what a service involves. Returns only real catalog entries — never prices.",
-        parameters: {
-          type: "object",
-          properties: {
-            query: { type: "string", description: "What the caller asked about, e.g. 'brakes', 'alignment'." },
-          },
-          required: ["query"],
-        },
-      },
-      server,
-    },
+/** Recording the handoff — offered in both normal and kill-switch mode. */
+function HANDOFF_TOOL(server: any) {
+  return (
     // Logs WHY we're handing off and writes the recoverable handoff row. It does NOT move the
     // call — a tool result is just text to the model. The actual leg transfer is Vapi's native
     // transferCall tool below.
@@ -69,8 +47,40 @@ function toolDefinitions(ctx: InboundContext) {
         },
       },
       server,
+    }
+  );
+}
+
+/** Tools the inbound agent can call. The server resolves identity; these carry only intent. */
+function toolDefinitions(ctx: InboundContext) {
+  const url = `${env.APP_URL}/inbound/tools`;
+  // Vapi persists `headers`, not `secret` — a `secret` here is silently dropped and every tool
+  // call would arrive unauthenticated (same failure mode as the phone-number config, see SETUP).
+  const server = { url, headers: { "x-vapi-secret": env.VAPI_WEBHOOK_SECRET } };
+
+  // With the kill switch on the agent must not answer anything, so the services tool is withheld.
+  const tools: any[] = ctx.agentEnabled ? [
+    {
+      type: "function",
+      function: {
+        name: "lookup_services",
+        description:
+          "Look up services this dealership offers. Use when the caller asks whether we do " +
+          "something, or what a service involves. Returns only real catalog entries — never prices.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "What the caller asked about, e.g. 'brakes', 'alignment'." },
+          },
+          required: ["query"],
+        },
+      },
+      server,
     },
-  ];
+  ] : [];
+
+  // Recording the handoff works in both modes.
+  tools.push(HANDOFF_TOOL(server));
 
   // Vapi's NATIVE transfer. Only this actually moves the call leg; without it the agent says
   // "connecting you now" and the caller sits there — which is worse than refusing outright.
@@ -85,9 +95,10 @@ function toolDefinitions(ctx: InboundContext) {
     });
   }
 
-  // Customer-scoped tools are only OFFERED on an identified call. They also refuse server-side on
-  // an anonymous call (defense in depth) — but not advertising them keeps the model from trying.
-  if (ctx.customerId) {
+  // Customer-scoped tools are only OFFERED on an identified call, and never while the kill
+  // switch is on. They also refuse server-side (defense in depth) — but not advertising them
+  // keeps the model from trying.
+  if (ctx.customerId && ctx.agentEnabled) {
     tools.push(
       {
         type: "function",
