@@ -90,6 +90,12 @@ knows comes from structured database rows. Two distinct sources answer two disti
 
 ### "Do you do X?" → `service_offerings`
 
+**Only service NAMES go in the prompt.** Full descriptions and durations were 903 tokens — 38% of
+the prompt — re-sent on every turn of every call, which costs both money and time-to-first-token.
+Names are enough to know whether we do something; `lookup_services` fetches what a service involves
+on demand. Past 40 services even the names are dropped and the agent relies entirely on the tool.
+
+
 A per-dealership catalog: name, description, category, typical duration. Edited in
 **Settings → Services we offer**. The agent may describe **only** what is in this table.
 

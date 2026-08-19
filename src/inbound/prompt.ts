@@ -210,19 +210,33 @@ function hoursBlock(ctx: InboundContext): string {
   return lines.join("\n");
 }
 
+/**
+ * The services block. Full descriptions and durations for every service were 903 tokens — 38% of
+ * the prompt — re-sent on EVERY turn of every call, which costs both money and time-to-first-token.
+ *
+ * Names only (~1/5 the size) is enough for the agent to know whether we do something; when it
+ * needs what a service involves or how long it takes, lookup_services returns that on demand.
+ * Above a threshold we drop even the names and rely entirely on the tool, since a very long list
+ * is neither useful to read aloud nor worth re-sending.
+ */
+const INLINE_SERVICE_LIMIT = 40;
+
 function offeringsBlock(ctx: InboundContext): string {
   if (!ctx.offerings.length) {
     return "SERVICES: no catalog is configured. Don't guess what we offer — transfer service questions.";
   }
-  const lines = ["SERVICES WE OFFER (this list is authoritative — do not add to it):"];
-  for (const o of ctx.offerings.slice(0, 60)) {
-    const bits = [`- ${o.name}`];
-    if (o.description) bits.push(`: ${o.description}`);
-    if (o.typical_duration_min) bits.push(` (typically about ${o.typical_duration_min} minutes)`);
-    lines.push(bits.join(""));
+  if (ctx.offerings.length > INLINE_SERVICE_LIMIT) {
+    return [
+      "SERVICES: we have a large catalog. Use lookup_services to check whether we do something",
+      "before answering. Never guess — if the tool returns nothing, say we don't offer it and",
+      "offer a transfer.",
+    ].join("\n");
   }
-  lines.push("Use lookup_services if you need to check something not listed here.");
-  return lines.join("\n");
+  return [
+    "SERVICES WE OFFER (authoritative — never add to this list):",
+    ctx.offerings.map((o) => o.name).join(" · "),
+    "Call lookup_services for what a service involves or how long it takes — don't guess either.",
+  ].join("\n");
 }
 
 /**
