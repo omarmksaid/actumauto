@@ -213,6 +213,30 @@ matching is not good enough for this dealership and verbal verification becomes 
 
 ---
 
+## 6b. Testing the agent without calling
+
+`scripts/chat.ts` talks to the agent from a terminal using the **same** `/inbound/assistant` and
+`/inbound/tools` endpoints Vapi calls — same prompt, same tools, same data. Only speech is missing.
+
+```bash
+npx tsx scripts/chat.ts                # as a known caller (first customer on file)
+npx tsx scripts/chat.ts --anon         # as an unrecognized caller
+npx tsx scripts/chat.ts --from +1408…  # as a specific number
+npx tsx scripts/chat.ts --prompt       # print the system prompt and exit
+```
+
+Tool calls are executed for real and printed, so you can see whether the agent **looked something
+up** or invented it — the single most useful signal when tuning the prompt. Scripted turns work
+too (`printf 'where is my car?\n' | npx tsx scripts/chat.ts`), which makes a prompt change
+repeatable to check.
+
+Simulated call rows are deleted on exit so the dashboard keeps reflecting only real calls.
+
+To change how the agent behaves, edit `src/inbound/prompt.ts` — guardrails are hardcoded there,
+and the dealership-editable persona sits inside them (Settings → inbound behavior prompt).
+
+---
+
 ## 7. Guardrails (hardcoded, not editable)
 
 1. Never invent prices, promotions, or wait times
