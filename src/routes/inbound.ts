@@ -221,7 +221,6 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
     companyId: pinned.companyId,
     customerId: pinned.customerId,
     vehicleId,
-    touchpointId: null,                          // inbound: no scheduled work behind this call (§16e)
     preferredTime,
     serviceOps: Array.isArray(args.service_ops) ? args.service_ops.map(String) : [],
     notes: [String(args.notes ?? "").trim(), "(booked on inbound call)"].filter(Boolean).join(" "),

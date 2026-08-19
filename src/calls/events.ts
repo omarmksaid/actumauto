@@ -66,7 +66,7 @@ async function handleEndOfCall(msg: any): Promise<void> {
   }).eq("id", call.id);
 
   await recordCost({
-    companyId: call.company_id, touchpointId: null, customerId: call.customer_id,
+    companyId: call.company_id, customerId: call.customer_id,
     category: "voice", amountUsd: costUsd,
     meta: { vapiCallId, durationSec, direction: call.direction },
   });

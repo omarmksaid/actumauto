@@ -20,7 +20,6 @@ export interface CreateAppointmentInput {
   companyId: string;
   customerId: string;
   vehicleId: string | null;
-  touchpointId: string | null;
   preferredTime: string;    // free-text or ISO the customer stated
   serviceOps: string[];
   notes: string;            // includes the TPC:<appointment_id> tag for the shown-RO loop (§6b)

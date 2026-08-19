@@ -24,7 +24,6 @@ export type CostCategory = "voice" | "sms" | "email" | "llm" | "embedding" | "an
 
 export async function recordCost(opts: {
   companyId: string;
-  touchpointId?: string | null;
   callId?: string | null;
   customerId?: string | null;
   category: CostCategory;
@@ -34,7 +33,6 @@ export async function recordCost(opts: {
   if (!(opts.amountUsd > 0)) return;
   await supabaseAdmin.from("cost_events").insert({
     company_id: opts.companyId,
-    touchpoint_id: opts.touchpointId ?? null,
     call_id: opts.callId ?? null,
     customer_id: opts.customerId ?? null,
     category: opts.category,

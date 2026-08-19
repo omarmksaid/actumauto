@@ -25,7 +25,6 @@ export const softBooking: BookingProvider = {
       company_id: input.companyId,
       customer_id: input.customerId,
       vehicle_id: input.vehicleId,
-      touchpoint_id: input.touchpointId,
       provider: "soft",
       preferred_time: input.preferredTime,
       service_ops: { ops: input.serviceOps },
