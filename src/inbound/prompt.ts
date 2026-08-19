@@ -172,18 +172,11 @@ export function buildInboundGreeting(ctx: InboundContext): string {
 
   // Naming the caller AND their car is the one place identification is immediately visible, and
   // it saves the "which vehicle?" round-trip that otherwise opens every call.
+  // Greet by name when we know them, then leave the floor open. Naming their vehicle here
+  // narrows the conversation before the caller has said what they want — the agent already has
+  // the car in its prompt and can raise it once their actual reason is handled.
   if (ctx.customerId && ctx.customerName) {
     const first = ctx.customerName.split(" ")[0];
-
-    // One vehicle: name it, using just make + model. The model year is in the prompt if it's
-    // needed, but spoken aloud "your 2022 Toyota RAV4" is a mouthful for an opening line.
-    // Naming a car when they own several would presume the wrong one, so multi-vehicle
-    // households get the neutral phrasing instead.
-    if (ctx.vehicles.length === 1) {
-      const v = ctx.vehicles[0];
-      return `Hey ${first}, you've made it to the service center. ` +
-        `Any questions about your ${v.make} ${v.model}?`;
-    }
     return `Hey ${first}, you've made it to the service center. How can I help you today?`;
   }
   return `You've made it to the service center. How can I help you today?`;
