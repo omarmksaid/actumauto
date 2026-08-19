@@ -19,6 +19,19 @@ import ws from "ws";
 const API = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
 const SECRET = process.env.VAPI_WEBHOOK_SECRET ?? "";
 
+/**
+ * Accept what a person would type (628-358-7659, (628) 358 7659, 16283587659) and produce the
+ * E.164 form Vapi actually sends. Passing a raw 10-digit string would exercise a case that never
+ * occurs on a real call.
+ */
+function toE164(raw: string): string {
+  const d = raw.replace(/\D/g, "");
+  if (d.length === 10) return `+1${d}`;
+  if (d.length === 11 && d.startsWith("1")) return `+${d}`;
+  if (raw.trim().startsWith("+") && d.length >= 11) return `+${d}`;
+  return "";
+}
+
 async function post(path: string, body: any) {
   const r = await fetch(`${API}${path}`, {
     method: "POST",
@@ -43,12 +56,25 @@ async function main() {
   if (!num) { console.error("No enabled phone_numbers row — the agent can't resolve a dealership."); process.exit(1); }
 
   let from: string;
-  if (fromFlag >= 0) from = args[fromFlag + 1];
-  else if (anon) from = "+15550009999";
-  else {
+  if (fromFlag >= 0) {
+    const raw = args[fromFlag + 1];
+    if (!raw) { console.error("--from needs a number, e.g. --from 628-358-7659"); process.exit(1); }
+    from = toE164(raw);
+    if (!from) {
+      console.error(`could not read "${raw}" as a phone number (want 10 digits, or 11 starting with 1)`);
+      process.exit(1);
+    }
+  } else if (anon) {
+    from = "+15550009999";
+  } else {
     const { data: c } = await sb.from("customers").select("phone").not("phone", "is", null).limit(1).single();
     from = c?.phone ?? "+15550009999";
   }
+
+  // Report what the lookup will actually do, so a "why didn't it know me?" is answerable up front.
+  const { data: matches } = await sb.from("customers").select("full_name, phone");
+  const digits = from.replace(/\D/g, "").slice(-10);
+  const hits = (matches ?? []).filter((c: any) => (c.phone ?? "").replace(/\D/g, "").slice(-10) === digits);
 
   const callId = `sim-${Date.now()}`;
   const { assistant } = await post("/inbound/assistant", {
@@ -70,7 +96,11 @@ async function main() {
   tools.push({ name: "transferCall", description: "Transfer the caller to a human.",
     input_schema: { type: "object", properties: {} } });
 
-  console.log(`\n  calling as ${from} ${anon || from === "+15550009999" ? "(unrecognized)" : ""}`);
+  const who = hits.length === 1 ? `identified as ${hits[0].full_name}`
+            : hits.length > 1 ? `AMBIGUOUS — ${hits.length} customers share this number, so the agent treats it as anonymous`
+            : "not on file — anonymous";
+  console.log(`\n  dialing ${num.e164} from ${from}`);
+  console.log(`  ${who}`);
   console.log(`  tools: ${tools.map((t: any) => t.name).join(", ")}\n`);
   console.log(`  AGENT: ${assistant.firstMessage}\n`);
 

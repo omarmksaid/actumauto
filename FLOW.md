@@ -221,9 +221,14 @@ matching is not good enough for this dealership and verbal verification becomes 
 ```bash
 npx tsx scripts/chat.ts                # as a known caller (first customer on file)
 npx tsx scripts/chat.ts --anon         # as an unrecognized caller
-npx tsx scripts/chat.ts --from +1408…  # as a specific number
+npx tsx scripts/chat.ts --from 628-358-7659   # as a specific number (any format)
 npx tsx scripts/chat.ts --prompt       # print the system prompt and exit
 ```
+
+The number is normalized to E.164 before the lookup — the form Vapi actually sends — and the
+header states which of the three identification outcomes you're testing (identified / not on file
+/ ambiguous). The ambiguous case, where two customers share a number and both are refused, is
+otherwise very hard to reproduce on a real phone.
 
 Tool calls are executed for real and printed, so you can see whether the agent **looked something
 up** or invented it — the single most useful signal when tuning the prompt. Scripted turns work
