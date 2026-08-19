@@ -13,6 +13,9 @@ import { boss } from "./queue";
 import { registerImport } from "../imports/worker";
 import { registerEventProcessor } from "../calls/events";
 
+/** Every queue this app sends to. Must be created up front (pg-boss v10). */
+const QUEUES = ["import", "process-webhook"];
+
 let started = false;
 
 export async function startWorker() {
@@ -20,6 +23,13 @@ export async function startWorker() {
   started = true;
 
   await boss.start();
+
+  // pg-boss v10 requires queues to EXIST before send() will accept a job. boss.work() alone does
+  // not create them, and send() to an unknown queue fails without throwing — the symptom is
+  // webhook_events piling up with processed_at null and an empty job table.
+  for (const q of QUEUES) {
+    await boss.createQueue(q).catch(() => { /* already exists */ });
+  }
 
   await registerImport(boss);
   await registerEventProcessor(boss);

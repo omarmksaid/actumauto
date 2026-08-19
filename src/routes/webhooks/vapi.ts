@@ -34,8 +34,11 @@ vapiWebhooks.post("/vapi", async (c) => {
 
   // Even on an invalid signature we persist (for audit) but don't enqueue processing.
   if (!error && valid && data) {
+    // Log enqueue failures. Swallowing them silently leaves rows in webhook_events forever with
+    // processed_at null and no clue why — the event is safe, but nothing ever acts on it.
     await boss.send("process-webhook", { webhookEventId: data.id },
-      { singletonKey: `webhook:${data.id}` }).catch(() => {});
+      { singletonKey: `webhook:${data.id}` })
+      .catch((e) => console.error("[webhook] enqueue failed:", e?.message ?? e));
   }
 
   // Always 200 quickly so Vapi doesn't exhaust its limited retries.
