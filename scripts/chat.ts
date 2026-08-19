@@ -101,6 +101,10 @@ async function main() {
   // Vapi's native transferCall isn't a server tool; model it so the agent can "transfer" here.
   tools.push({ name: "transferCall", description: "Transfer the caller to a human.",
     input_schema: { type: "object", properties: {} } });
+  // Vapi exposes endCall via endCallFunctionEnabled. Model it too, otherwise the simulator can't
+  // show whether the agent actually hangs up when the conversation is finished.
+  tools.push({ name: "endCall", description: "End the call once the conversation is complete.",
+    input_schema: { type: "object", properties: {} } });
 
   const who = hits.length === 1 ? `identified as ${hits[0].full_name}`
             : hits.length > 1 ? `AMBIGUOUS — ${hits.length} customers share this number, so the agent treats it as anonymous`
@@ -112,9 +116,10 @@ async function main() {
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
   const messages: any[] = [];
+  let ended = false;
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  while (true) {
+  while (!ended) {
     // Piped stdin closes readline once input runs out; treat that as "hang up" rather than crash,
     // so scripted turns (echo "..." | chat.ts) work for repeatable prompt testing.
     let you: string;
@@ -139,6 +144,12 @@ async function main() {
 
       const results: any[] = [];
       for (const tc of calls as any[]) {
+        if (tc.name === "endCall") {
+          console.log(`  [call ended by agent]`);
+          ended = true;
+          results.push({ type: "tool_result", tool_use_id: tc.id, content: "Call ended." });
+          continue;
+        }
         if (tc.name === "transferCall") {
           console.log(`  [transfer] caller would now be connected to a human`);
           results.push({ type: "tool_result", tool_use_id: tc.id, content: "Transferred." });
@@ -154,6 +165,7 @@ async function main() {
         results.push({ type: "tool_result", tool_use_id: tc.id, content: String(result) });
       }
       messages.push({ role: "user", content: results });
+      if (ended) break;
     }
   }
   rl.close();

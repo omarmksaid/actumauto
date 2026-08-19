@@ -49,6 +49,8 @@ export interface InboundContext {
   agentEnabled: boolean;
   /** Opening hours per weekday, dealership-local. null for a day means closed. */
   businessHours: Record<string, [string, string] | null>;
+  /** Today, in the dealership's timezone — the agent can't resolve "tomorrow" without it. */
+  todayLabel: string;
   /** Diagnostics: how many customers matched the caller ID (0, 1, or >1 ⇒ ambiguous). */
   matchCount: number;
 }
@@ -97,6 +99,10 @@ export async function resolveInboundContext(
     identifyMode: (inbound.identify_mode as IdentifyMode) ?? "caller_id_only",
     agentEnabled: company?.agent_enabled !== false,
     businessHours: (company?.business_hours ?? {}) as Record<string, [string, string] | null>,
+    todayLabel: new Date().toLocaleDateString("en-US", {
+      weekday: "long", month: "long", day: "numeric", year: "numeric",
+      timeZone: company?.timezone ?? "America/Los_Angeles",
+    }),
     matchCount: Number(row.match_count ?? 0),
   };
 

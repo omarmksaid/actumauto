@@ -87,6 +87,22 @@ function guardrails(ctx: InboundContext, bookingMode: BookingMode): string {
   return lines.join("\n");
 }
 
+/**
+ * Ending the call. Vapi exposes an end-call function, but without instruction the agent never
+ * uses it — so a finished conversation just sits there with both parties waiting.
+ */
+const CLOSING_RULES = [
+  "ENDING THE CALL:",
+  "- When the caller's reason for calling is resolved and they have nothing else, close warmly",
+  "  in one short line and END THE CALL. Don't leave the line open.",
+  "- Before closing, ask once whether there's anything else. If they say no, that's your cue.",
+  "- After a booking is captured, confirm what happens next in one sentence, offer any due",
+  "  service ONCE, and if they decline or accept, wrap up and end the call.",
+  "- If the caller says goodbye, thanks you, or says they're all set, end the call — don't",
+  "  restart the conversation with another question.",
+  "- Do NOT end the call while transferring; the transfer tool handles that.",
+].join("\n");
+
 /** The transfer policy block (§16b) — the single most important inbound behavior. */
 function transferRules(ctx: InboundContext): string {
   return [
@@ -168,7 +184,7 @@ function hoursBlock(ctx: InboundContext): string {
     return m ? `${hr}:${String(m).padStart(2, "0")} ${ampm}` : `${hr} ${ampm}`;
   };
 
-  const lines = ["WHEN WE'RE OPEN (dealership local time):"];
+  const lines = [`TODAY IS ${ctx.todayLabel}.`, "", "WHEN WE'RE OPEN (dealership local time):"];
   let any = false;
   for (const [key, label] of DAYS) {
     const v = ctx.businessHours?.[key];
@@ -180,7 +196,9 @@ function hoursBlock(ctx: InboundContext): string {
   lines.push(
     "NEVER accept an appointment time outside these hours, and never one in the past. If the",
     "caller asks for a time we're closed, say so warmly, name the nearest time we ARE open, and",
-    "let them choose. Only call book_service once the time is inside our hours."
+    "let them choose. Only call book_service once the time is inside our hours.",
+    "You know today's date, so work out what \"tomorrow\" or \"Friday\" means yourself — never ask",
+    "the caller what day it is."
   );
   return lines.join("\n");
 }
@@ -227,6 +245,8 @@ export function buildInboundSystemPrompt(ctx: InboundContext, bookingMode: Booki
     offeringsBlock(ctx),
     "",
     hoursBlock(ctx),
+    "",
+    CLOSING_RULES,
     "",
     transferRules(ctx),
   ].join("\n");
