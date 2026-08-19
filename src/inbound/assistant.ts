@@ -18,7 +18,9 @@ import { getBookingProvider } from "../booking";
 /** Tools the inbound agent can call. The server resolves identity; these carry only intent. */
 function toolDefinitions(ctx: InboundContext) {
   const url = `${env.APP_URL}/inbound/tools`;
-  const server = { url, secret: env.VAPI_WEBHOOK_SECRET };
+  // Vapi persists `headers`, not `secret` — a `secret` here is silently dropped and every tool
+  // call would arrive unauthenticated (same failure mode as the phone-number config, see SETUP).
+  const server = { url, headers: { "x-vapi-secret": env.VAPI_WEBHOOK_SECRET } };
 
   const tools: any[] = [
     {
@@ -128,6 +130,20 @@ function toolDefinitions(ctx: InboundContext) {
   return tools;
 }
 
+
+/**
+ * Vapi's TTS block. A provider with an EMPTY voiceId fails the pipeline instantly
+ * (`pipeline-error-<provider>-voice-failed`) and the caller hears silence, so never emit one:
+ * fall back to a provider/voice pair that works out of the box with no extra credentials.
+ */
+function resolveVoice(voice: { provider: string; voice_id: string }) {
+  if (voice.voice_id?.trim()) {
+    return { provider: voice.provider, voiceId: voice.voice_id.trim() };
+  }
+  // Vapi-managed default — no per-provider key required.
+  return { provider: "vapi", voiceId: "Elliot" };
+}
+
 export function buildInboundAssistant(ctx: InboundContext, voice: { provider: string; voice_id: string }) {
   const bookingMode = getBookingProvider().mode;
 
@@ -140,7 +156,7 @@ export function buildInboundAssistant(ctx: InboundContext, voice: { provider: st
       messages: [{ role: "system", content: buildInboundSystemPrompt(ctx, bookingMode) }],
       tools: toolDefinitions(ctx),
     },
-    voice: { provider: voice.provider, voiceId: voice.voice_id },
+    voice: resolveVoice(voice),
     transcriber: { provider: "deepgram", language: "multi" },
     maxDurationSeconds: 900,                     // inbound runs longer than a reminder call
     endCallFunctionEnabled: true,
@@ -151,6 +167,9 @@ export function buildInboundAssistant(ctx: InboundContext, voice: { provider: st
       companyId: ctx.companyId,
       customerId: ctx.customerId,
     },
-    server: { url: `${env.APP_URL}/webhooks/vapi`, secret: env.VAPI_WEBHOOK_SECRET },
+    server: {
+      url: `${env.APP_URL}/webhooks/vapi`,
+      headers: { "x-vapi-secret": env.VAPI_WEBHOOK_SECRET },
+    },
   };
 }
