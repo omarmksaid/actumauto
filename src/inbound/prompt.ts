@@ -15,7 +15,7 @@ import { BookingMode } from "../booking/types";
 import type { InboundContext } from "./identify";
 
 const DEFAULT_PERSONA =
-  "You are the service department's phone assistant for the dealership. Tone: warm, efficient, " +
+  "You are the service center's phone assistant for the dealership. Tone: warm, efficient, " +
   "and genuinely helpful — you are answering someone who called in, so let them lead. Keep " +
   "answers short and conversational; this is a phone call, not an essay.";
 
@@ -42,7 +42,7 @@ function guardrails(ctx: InboundContext, bookingMode: BookingMode): string {
     "- NEVER guess or estimate the status of a vehicle currently in the shop. You do not have " +
       "access to repair-order status.",
     `- ${bookingRule}`,
-    "- Disclose that you're an assistant with the dealership's service department, and that the " +
+    "- Disclose that you're an assistant with the dealership's service center, and that the " +
       "call may be recorded, if the caller asks or seems unsure who they're speaking to.",
     "- If the caller asks to stop being contacted, acknowledge and emit the tag [OPTOUT].",
   ];
@@ -156,7 +156,7 @@ export function buildInboundSystemPrompt(ctx: InboundContext, bookingMode: Booki
     "",
     ctx.personaTemplate?.trim() || DEFAULT_PERSONA,
     "",
-    `DEALERSHIP: ${ctx.companyName} — service department.`,
+    `DEALERSHIP: ${ctx.companyName} — service center.`,
     "",
     ctx.customerId ? identifiedBlock(ctx) : anonymousBlock(),
     "",
@@ -181,10 +181,10 @@ export function buildInboundGreeting(ctx: InboundContext): string {
     // households get the neutral phrasing instead.
     if (ctx.vehicles.length === 1) {
       const v = ctx.vehicles[0];
-      return `Hey ${first}, you've made it to the service department. ` +
+      return `Hey ${first}, you've made it to the service center. ` +
         `Any questions about your ${v.make} ${v.model}?`;
     }
-    return `Hey ${first}, you've made it to the service department. How can I help you today?`;
+    return `Hey ${first}, you've made it to the service center. How can I help you today?`;
   }
-  return `You've made it to the service department. How can I help you today?`;
+  return `You've made it to the service center. How can I help you today?`;
 }
