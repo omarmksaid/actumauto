@@ -22,7 +22,8 @@ export default function CallDetailPage() {
   if (error) return <div className="banner banner-error">{error}</div>;
   if (!data) return null;
 
-  const { call, transcript } = data;
+  const { call } = data;
+  const transcript = data.transcript ?? [];   // never let a missing list white-screen the page
 
   return (
     <div>

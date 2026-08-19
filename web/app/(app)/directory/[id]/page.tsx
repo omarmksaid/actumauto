@@ -22,7 +22,12 @@ export default function CustomerPage() {
   if (error) return <div className="banner banner-error">{error}</div>;
   if (!data) return null;
 
-  const { customer, vehicles, recentCalls, recentMessages, appointments } = data;
+  // Defaulted: the API omits a key when there's nothing to send, and destructuring undefined
+  // then calling .map() takes the whole page down.
+  const { customer } = data;
+  const vehicles = data.vehicles ?? [];
+  const recentCalls = data.recentCalls ?? [];
+  const appointments = data.appointments ?? [];
   const personality = customer.personality?.summary;
 
   return (
@@ -87,17 +92,6 @@ export default function CustomerPage() {
               </Link>
             ))}
             {recentCalls.length === 0 && <div className="muted hint">None.</div>}
-          </div>
-
-          <div className="card card-pad">
-            <div className="section-label">Recent messages</div>
-            {recentMessages.map((m: any, i: number) => (
-              <div key={i} className="doc-row" style={{ display: "block", padding: "10px 0" }}>
-                <div className="hint">{m.channel} · {m.direction} · {new Date(m.created_at).toLocaleDateString()}</div>
-                <div>{m.content}</div>
-              </div>
-            ))}
-            {recentMessages.length === 0 && <div className="muted hint">None.</div>}
           </div>
         </div>
       </div>
