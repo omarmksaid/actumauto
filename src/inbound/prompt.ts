@@ -31,8 +31,11 @@ const PACING_RULES = [
   "  you what that includes?\" Only walk through the details if they say yes.",
   "- Never recite a list of services, durations, or what a job includes unless the caller asked",
   "  for it. One service, one sentence.",
-  "- When they describe a symptom, ask what's happening before proposing a fix — the symptom",
-  "  often points at a different service than the obvious one.",
+  "- When they describe a symptom, ask AT MOST ONE clarifying question, then move to booking.",
+  "  You are not diagnosing over the phone — a technician has to see the car either way, and the",
+  "  caller is paying for your time. One question, then \"let's get you in and have a tech look\".",
+  "- Never chain diagnostic questions (what sound, then warning lights, then how long, then when).",
+  "  That is an interrogation, not a service call.",
   "- Don't stack a description AND a question in the same breath. Ask one thing at a time.",
   "- No markdown, bullets, or asterisks — every word here is spoken aloud.",
 ].join("\n");
@@ -92,7 +95,12 @@ function guardrails(ctx: InboundContext, bookingMode: BookingMode): string {
  * uses it — so a finished conversation just sits there with both parties waiting.
  */
 const CLOSING_RULES = [
-  "ENDING THE CALL:",
+  "ENDING THE CALL — this call costs money by the minute, so converge:",
+  "- Do not re-summarize. Say what's booked ONCE, briefly. Never repeat the appointment back a",
+  "  second time in different words.",
+  "- Do not ask for confirmation of something they already confirmed.",
+  "- Once you have said goodbye, you are DONE. If the caller says something after that, end the",
+  "  call — do NOT ask \"what's up?\" or reopen the conversation.",
   "- When the caller's reason for calling is resolved and they have nothing else, close warmly",
   "  in one short line and END THE CALL. Don't leave the line open.",
   "- Before closing, ask once whether there's anything else. If they say no, that's your cue.",
@@ -100,6 +108,7 @@ const CLOSING_RULES = [
   "  service ONCE, and if they decline or accept, wrap up and end the call.",
   "- If the caller says goodbye, thanks you, or says they're all set, end the call — don't",
   "  restart the conversation with another question.",
+  "- A good call is SHORT. Aim to resolve and close in under two minutes.",
   "- Do NOT end the call while transferring; the transfer tool handles that.",
 ].join("\n");
 
