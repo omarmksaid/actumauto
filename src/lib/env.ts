@@ -15,7 +15,9 @@ export const env = {
 
   // Supabase (session-mode pooler for pg-boss — see .env.example note).
   DATABASE_URL: req("DATABASE_URL"),
-  SUPABASE_URL: req("SUPABASE_URL"),
+  // Normalized: a trailing slash would produce "…co//auth/v1/…" when interpolated (auth.ts).
+  // Supabase happens to tolerate it, but a pasted-from-the-dashboard slash shouldn't depend on that.
+  SUPABASE_URL: req("SUPABASE_URL").replace(/\/+$/, ""),
   SUPABASE_SERVICE_ROLE_KEY: req("SUPABASE_SERVICE_ROLE_KEY"),
   SUPABASE_JWT_SECRET: req("SUPABASE_JWT_SECRET"),
 

@@ -41,8 +41,11 @@ async function main() {
 
   // ── 3. Supabase: can we reach it with the service-role key, and is the schema migrated? ──
   const { createClient } = await import("@supabase/supabase-js");
-  const sb = createClient(need("SUPABASE_URL"), need("SUPABASE_SERVICE_ROLE_KEY"), {
+  const ws = (await import("ws")).default;
+  const sb = createClient(need("SUPABASE_URL").replace(/\/+$/, ""), need("SUPABASE_SERVICE_ROLE_KEY"), {
     auth: { persistSession: false },
+    // Node < 22 has no native WebSocket; realtime-js throws at construction without this.
+    realtime: { transport: ws as any },
   });
 
   try {
