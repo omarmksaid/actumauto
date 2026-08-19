@@ -128,6 +128,12 @@ async function runTool(name: string, args: any, pinned: PinnedCall): Promise<str
   }
 }
 
+/** Words that would match everything and drown the real signal. */
+const STOPWORDS = new Set([
+  "the", "and", "for", "you", "your", "our", "any", "can", "does", "did", "with", "about",
+  "have", "has", "get", "got", "need", "want", "please", "service", "car", "vehicle",
+]);
+
 /** The anonymous refusal. Server-side, so prompt wording is not the only thing protecting this. */
 const ANON_REFUSAL =
   "I'm not able to look up account or vehicle details on this call — I don't have the caller " +
@@ -140,8 +146,22 @@ async function lookupServices(query: string, pinned: PinnedCall): Promise<string
     .select("name, description, category, typical_duration_min")
     .eq("company_id", pinned.companyId).eq("active", true);
 
+  // Callers speak naturally ("brakes", "my brakes are squeaking"), catalog entries are formal
+  // ("Brake pad replacement"). Match on individual word STEMS so plurals and phrases still hit:
+  // a raw `ilike %brakes%` misses "Brake" entirely and we'd wrongly say we don't do brake work.
   const term = query.trim();
-  if (term) q = q.or(`name.ilike.%${term}%,description.ilike.%${term}%,category.ilike.%${term}%`);
+  const stems = term
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 3 && !STOPWORDS.has(w))
+    .map((w) => w.replace(/(ies|es|s)$/, ""))        // brakes→brake, batteries→batter
+    .filter((w) => w.length >= 3)
+    .slice(0, 6);
+
+  if (stems.length) {
+    q = q.or(stems.flatMap((w) =>
+      [`name.ilike.%${w}%`, `description.ilike.%${w}%`, `category.ilike.%${w}%`]).join(","));
+  }
 
   const { data } = await q.limit(15);
   if (!data?.length) {
