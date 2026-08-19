@@ -292,7 +292,9 @@ async function companyVoice(companyId: string): Promise<{ provider: string; voic
   // { provider: "vapi" }. That must WIN over the env default — otherwise `??` falls straight
   // through to DEFAULT_TTS_PROVIDER and "use the built-in" is unreachable.
   const configured = settings.inbound?.voice ?? settings.voice;
-  if (configured?.provider === "vapi") return { provider: "vapi", voice_id: "" };
+  if (configured?.provider === "vapi") {
+    return { provider: "vapi", voice_id: configured.voice_id || "Elliot" };
+  }
 
   const voice = configured ?? {};
   return {

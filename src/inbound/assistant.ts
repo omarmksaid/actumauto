@@ -140,7 +140,7 @@ function resolveVoice(voice: { provider: string; voice_id: string }) {
   if (voice.voice_id?.trim()) {
     return { provider: voice.provider, voiceId: voice.voice_id.trim() };
   }
-  // Vapi-managed default — no per-provider key required.
+  // No voice configured — fall back to a Vapi-managed one, which needs no provider credentials.
   return { provider: "vapi", voiceId: "Elliot" };
 }
 

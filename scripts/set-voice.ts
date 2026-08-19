@@ -18,6 +18,8 @@ async function main() {
   const provider = process.argv[2];
   const voiceId = process.argv[3];
   if (!provider) { console.error("usage: set-voice.ts <provider> [voiceId]"); process.exit(1); }
+  // Every provider needs a voice — an empty one ends the call in ~300ms with dead air.
+  // For Vapi's built-ins we default to a known-good name rather than erroring.
   if (provider !== "vapi" && !voiceId) { console.error(`a voiceId is required for ${provider}`); process.exit(1); }
 
   const sb = createClient((process.env.SUPABASE_URL ?? "").replace(/\/+$/, ""),
@@ -31,7 +33,7 @@ async function main() {
   settings.inbound = { ...(settings.inbound ?? {}) };
   // Store an explicit marker rather than null — null would fall through to the env default.
   settings.inbound.voice = provider === "vapi"
-    ? { provider: "vapi", voice_id: "" }
+    ? { provider: "vapi", voice_id: voiceId || "Elliot" }
     : { provider, voice_id: voiceId };
 
   const { error } = await sb.from("companies").update({ settings }).eq("id", co.id);
