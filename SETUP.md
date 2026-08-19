@@ -72,6 +72,20 @@ To route the dealership's incoming service calls to the agent:
    assistant** to a **Server URL** (dynamic assistant) of `${APP_URL}/inbound/assistant`, with the
    same `VAPI_WEBHOOK_SECRET`. On each incoming call Vapi asks that endpoint who's calling, and we
    answer synchronously with an assistant built for that specific caller.
+
+   ⚠️ **The secret must go in `server.headers`, not `server.secret`.** Vapi's API accepts a
+   `server.secret` field, returns 200, and then silently drops it — the number ends up with a URL
+   and no credential, every call 401s, and the caller hears "unauthorized" before it hangs up.
+   Nothing reaches your API logs, because the request never gets dispatched. Set it via the API as:
+
+   ```bash
+   curl -X PATCH "https://api.vapi.ai/phone-number/<PHONE_ID>" \
+     -H "Authorization: Bearer $VAPI_API_KEY" -H "Content-Type: application/json" \
+     -d '{"server":{"url":"'"$APP_URL"'/inbound/assistant",
+          "headers":{"x-vapi-secret":"'"$VAPI_WEBHOOK_SECRET"'"}}}'
+   ```
+
+   Verify it stuck — a GET on the same endpoint should show `headers`, not an empty `server`.
 2. The number **must exist in `phone_numbers` with its `e164`** — that's how we resolve which
    dealership was dialed. An unrecognized destination returns 404 and the agent won't answer.
 3. In the dashboard → **Settings → Inbound service line**, set the **transfer number** (the staffed
