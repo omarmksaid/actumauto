@@ -174,15 +174,17 @@ export function buildInboundGreeting(ctx: InboundContext): string {
   // it saves the "which vehicle?" round-trip that otherwise opens every call.
   if (ctx.customerId && ctx.customerName) {
     const first = ctx.customerName.split(" ")[0];
-    const opener = `Hey ${first}, thanks for calling ${ctx.companyName} service department`;
 
-    // One vehicle: name it. Naming a specific car when they own several would presume the wrong
-    // one, so multi-vehicle households get the neutral phrasing instead.
+    // One vehicle: name it, using just make + model. The model year is in the prompt if it's
+    // needed, but spoken aloud "your 2022 Toyota RAV4" is a mouthful for an opening line.
+    // Naming a car when they own several would presume the wrong one, so multi-vehicle
+    // households get the neutral phrasing instead.
     if (ctx.vehicles.length === 1) {
       const v = ctx.vehicles[0];
-      return `${opener}. Do you have any questions about your ${v.year} ${v.make} ${v.model}, or something else?`;
+      return `Hey ${first}, you've made it to the service department. ` +
+        `Any questions about your ${v.make} ${v.model}?`;
     }
-    return `${opener}. How can I help you today?`;
+    return `Hey ${first}, you've made it to the service department. How can I help you today?`;
   }
-  return `Thanks for calling ${ctx.companyName} service department. How can I help you today?`;
+  return `You've made it to the service department. How can I help you today?`;
 }
