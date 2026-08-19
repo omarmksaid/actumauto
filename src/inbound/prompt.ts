@@ -170,10 +170,19 @@ export function buildInboundSystemPrompt(ctx: InboundContext, bookingMode: Booki
 export function buildInboundGreeting(ctx: InboundContext): string {
   if (ctx.greeting?.trim()) return ctx.greeting.trim();
 
-  // Greeting the caller by name is the one place identification is immediately visible to them.
+  // Naming the caller AND their car is the one place identification is immediately visible, and
+  // it saves the "which vehicle?" round-trip that otherwise opens every call.
   if (ctx.customerId && ctx.customerName) {
     const first = ctx.customerName.split(" ")[0];
-    return `Thanks for calling ${ctx.companyName} service — hi ${first}, how can I help you today?`;
+    const opener = `Hey ${first}, thanks for calling ${ctx.companyName} service department`;
+
+    // One vehicle: name it. Naming a specific car when they own several would presume the wrong
+    // one, so multi-vehicle households get the neutral phrasing instead.
+    if (ctx.vehicles.length === 1) {
+      const v = ctx.vehicles[0];
+      return `${opener}. Do you have any questions about your ${v.year} ${v.make} ${v.model}, or something else?`;
+    }
+    return `${opener}. How can I help you today?`;
   }
-  return `Thanks for calling ${ctx.companyName} service. How can I help you today?`;
+  return `Thanks for calling ${ctx.companyName} service department. How can I help you today?`;
 }
