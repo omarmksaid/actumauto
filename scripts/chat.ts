@@ -45,12 +45,15 @@ async function post(path: string, body: any) {
 async function main() {
   const args = process.argv.slice(2);
   const anon = args.includes("--anon");
+  const doCleanup = args.includes("--cleanup");
   const promptOnly = args.includes("--prompt");
   const fromFlag = args.indexOf("--from");
 
   const sb = createClient((process.env.SUPABASE_URL ?? "").replace(/\/+$/, ""),
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { persistSession: false }, realtime: { transport: ws as any } });
+
+  if (doCleanup) { await sweepSimulated(sb); return; }
 
   const { data: num } = await sb.from("phone_numbers").select("e164").eq("enabled", true).limit(1).single();
   if (!num) { console.error("No enabled phone_numbers row — the agent can't resolve a dealership."); process.exit(1); }
@@ -76,6 +79,9 @@ async function main() {
   const digits = from.replace(/\D/g, "").slice(-10);
   const hits = (matches ?? []).filter((c: any) => (c.phone ?? "").replace(/\D/g, "").slice(-10) === digits);
 
+  // Prefix marks these as simulated: cleanup runs on exit, but a hard kill (Ctrl-C twice,
+  // crash) can strand rows, and an untagged row is indistinguishable from a real call in the
+  // dashboard. `--cleanup` sweeps any strays.
   const callId = `sim-${Date.now()}`;
   const { assistant } = await post("/inbound/assistant", {
     message: { type: "assistant-request",
@@ -153,6 +159,16 @@ async function main() {
   rl.close();
   await cleanup(sb, callId);
   console.log("\n  (simulated call row cleaned up)");
+}
+
+/** Delete every stranded simulated call (from runs killed before cleanup). */
+async function sweepSimulated(sb: any) {
+  const { data } = await sb.from("calls").select("id").like("vapi_call_id", "sim-%");
+  const ids = (data ?? []).map((x: any) => x.id);
+  if (!ids.length) { console.log("  no stranded simulated rows"); return; }
+  await sb.from("handoff_requests").delete().in("call_id", ids);
+  await sb.from("calls").delete().in("id", ids);
+  console.log(`  removed ${ids.length} stranded simulated call row(s)`);
 }
 
 /** Remove the calls/handoff rows this simulation created so the dashboard stays truthful. */

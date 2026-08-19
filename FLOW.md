@@ -235,7 +235,11 @@ up** or invented it — the single most useful signal when tuning the prompt. Sc
 too (`printf 'where is my car?\n' | npx tsx scripts/chat.ts`), which makes a prompt change
 repeatable to check.
 
-Simulated call rows are deleted on exit so the dashboard keeps reflecting only real calls.
+**Database effects:** a simulation writes a `calls` row (identity is pinned to it, which is how
+the tools stay tenant-safe) and any `handoff_requests` a transfer produces. Both are deleted when
+you exit, so the dashboard keeps reflecting only real calls. A hard kill can strand them —
+`npx tsx scripts/chat.ts --cleanup` sweeps any leftovers. Bookings are NOT written: book_service
+runs, but its appointment is removed with the call row.
 
 To change how the agent behaves, edit `src/inbound/prompt.ts` — guardrails are hardcoded there,
 and the dealership-editable persona sits inside them (Settings → inbound behavior prompt).
