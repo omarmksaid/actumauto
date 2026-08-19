@@ -236,6 +236,13 @@ function offeringsBlock(ctx: InboundContext): string {
  * So the prompt is now strictly two halves:
  *   1. STATIC  — identical for every caller at this dealership, and cacheable.
  *   2. DYNAMIC — who called, what they drive, today's date. Appended last.
+ *
+ * STATUS: the prefix is ~2,150 tokens and 92% of the prompt, but Vapi still reports
+ * llmCachedPromptTokens: 0. Vapi builds the Anthropic request on its own account (no BYO key
+ * configured) and exposes no caching flag — cachingEnabled / promptCaching / cacheControl are all
+ * rejected as unknown properties. So whether cache_control markers are sent is Vapi's call, not
+ * ours. This structure is still correct and costs nothing; it means caching starts working the
+ * moment Vapi enables it, or immediately if we move to a BYO Anthropic key.
  */
 export function buildInboundSystemPrompt(ctx: InboundContext, bookingMode: BookingMode): string {
   // KILL SWITCH: don't hold a conversation. Say one line and hand off. Dead air would be worse
