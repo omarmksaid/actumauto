@@ -97,6 +97,12 @@ Queried by the `lookup_services` tool, which matches on **word stems** so natura
 formal catalog entries — "brakes" and "my brakes are squeaking" both find *Brake pad replacement*.
 Nothing matches ⇒ the agent says so and offers a transfer rather than inventing a service.
 
+**Adding services in bulk:** edit `scripts/services.json` and run
+`npx tsx scripts/import-services.ts`. Only `name` is required; `description`, `category`,
+`typical_duration_min`, `operations`, and `active` are optional. It matches on name and updates
+rather than duplicating, so re-running after an edit is safe. `--replace` deactivates entries the
+file no longer lists (deactivates, never deletes, so past appointments stay intelligible).
+
 **No prices, by design.** There is no price column. A quoted price is a commitment the dealership
 must honor, so cost questions are routed to an advisor.
 

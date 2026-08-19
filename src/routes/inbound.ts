@@ -134,9 +134,35 @@ async function runTool(name: string, args: any, pinned: PinnedCall): Promise<str
 const STOPWORDS = new Set([
   "the", "and", "for", "you", "your", "our", "any", "can", "does", "did", "with", "about",
   "have", "has", "get", "got", "need", "want", "please", "service", "car", "vehicle",
+  // Generic service-noise words: they appear in half the catalog, so matching on them returns
+  // near-arbitrary rows. "windshield replacement" once matched "Brake pad replacement" on
+  // `replacement` alone — offering brake pads to a cracked windshield.
+  "replacement", "replace", "repair", "check", "inspection", "inspect", "new", "fix",
 ]);
 
 /** The anonymous refusal. Server-side, so prompt wording is not the only thing protecting this. */
+/**
+ * How callers actually talk -> the words the catalog uses. Without this, "my AC is broken" finds
+ * nothing because the entry reads "Air conditioning service", and the agent would tell a caller
+ * we don't do something we do.
+ */
+const SYNONYMS: Record<string, string[]> = {
+  ac: ["air", "conditioning"], "a/c": ["air", "conditioning"], aircon: ["air", "conditioning"],
+  heater: ["air", "conditioning"], heat: ["air", "conditioning"],
+  tune: ["spark", "plug"], tuneup: ["spark", "plug"],
+  squeak: ["brake"], squeal: ["brake"], grinding: ["brake"], rotor: ["brake"],
+  battery: ["battery"], dead: ["battery"], jump: ["battery"],
+  smog: ["smog"], emission: ["smog"], registration: ["smog"],
+  alignment: ["alignment"], pulling: ["alignment"], steering: ["alignment"],
+  wiper: ["wiper"], blade: ["wiper"],
+  headlight: ["headlight"], bulb: ["headlight"], light: ["headlight"],
+  overheat: ["coolant"], overheating: ["coolant"], radiator: ["coolant"], antifreeze: ["coolant"],
+  transmission: ["transmission"], shifting: ["transmission"], gear: ["transmission"],
+  flat: ["tire"], puncture: ["tire"], nail: ["tire"], tread: ["tire"], tpm: ["tire"],
+  recall: ["recall"], warranty: ["warranty"], detail: ["detailing"], wash: ["detailing"],
+  noise: ["exhaust"], loud: ["exhaust"], muffler: ["exhaust"],
+};
+
 const ANON_REFUSAL =
   "I'm not able to look up account or vehicle details on this call — I don't have the caller " +
   "identified. Offer to transfer them to the service team.";
@@ -155,22 +181,46 @@ async function lookupServices(query: string, pinned: PinnedCall): Promise<string
   const stems = term
     .toLowerCase()
     .split(/[^a-z0-9]+/)
+    // Expand short-but-meaningful words (ac, a/c) BEFORE the length filter drops them.
+    .flatMap((w) => (SYNONYMS[w] && w.length < 3 ? SYNONYMS[w] : [w]))
     .filter((w) => w.length >= 3 && !STOPWORDS.has(w))
     .map((w) => w.replace(/(ies|es|s)$/, ""))        // brakes→brake, batteries→batter
     .filter((w) => w.length >= 3)
-    .slice(0, 6);
+    .flatMap((w) => SYNONYMS[w] ?? [w])              // "ac" -> air, conditioning
+    .slice(0, 8);
 
   if (stems.length) {
     q = q.or(stems.flatMap((w) =>
       [`name.ilike.%${w}%`, `description.ilike.%${w}%`, `category.ilike.%${w}%`]).join(","));
   }
 
-  const { data } = await q.limit(15);
+  const { data } = await q.limit(30);
   if (!data?.length) {
     return `Nothing in our service catalog matches "${term}". Don't guess — tell the caller you'll ` +
       `check with the service team, and offer to transfer.`;
   }
-  return data.map((o) =>
+
+  // ilike is substring matching, so short stems produce junk: "air" hits repAIR and chAIN, and
+  // "air conditioning" pulled back 13 of 30 services. Rank by where the stem actually landed and
+  // return only the top few — a long list read aloud is useless to a caller anyway.
+  const scored = data.map((o) => {
+    const name = o.name.toLowerCase();
+    let score = 0;
+    for (const w of stems) {
+      const inName = new RegExp(`\\b${w}`).test(name);          // word-start in the NAME
+      const inDesc = new RegExp(`\\b${w}`).test((o.description ?? "").toLowerCase());
+      if (inName) score += 10;
+      else if (inDesc) score += 3;
+      else if (name.includes(w)) score += 1;                    // mid-word: weak (repAIR)
+    }
+    return { o, score };
+  }).sort((a, b) => b.score - a.score);
+
+  // Keep only matches that landed on a word boundary somewhere; a purely mid-word hit is noise.
+  const strong = scored.filter((x) => x.score >= 3).slice(0, 5);
+  const chosen = strong.length ? strong : scored.slice(0, 3);
+
+  return chosen.map(({ o }) =>
     `- ${o.name}${o.description ? `: ${o.description}` : ""}` +
     `${o.typical_duration_min ? ` (about ${o.typical_duration_min} min)` : ""}`
   ).join("\n") + "\n(No pricing available — an advisor quotes cost.)";
