@@ -123,7 +123,9 @@ async function runTool(name: string, args: any, pinned: PinnedCall): Promise<str
     case "get_my_vehicles":   return await getMyVehicles(pinned);
     case "get_due_service":   return await getDueService(pinned);
     case "book_service":      return await bookService(args, pinned);
-    case "transfer_to_service": return await transferToService(args, pinned);
+    case "log_handoff":         return await logHandoff(args, pinned);
+    // Older name kept so a call already in flight during a deploy doesn't break.
+    case "transfer_to_service": return await logHandoff(args, pinned);
     default:                  return "That isn't something I can do.";
   }
 }
@@ -230,12 +232,12 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
 }
 
 /**
- * Transfer to the service line (§16b).
- *
- * Always writes a handoff_requests row BEFORE transferring, so the caller is recoverable even if
- * the transfer doesn't connect — "should pick up" is an expectation, not a guarantee.
+ * Record the handoff (§16b). This does NOT move the call — returning a JSON "transfer" blob as a
+ * tool result only puts text in front of the model, which is exactly how a caller ends up hearing
+ * "connecting you now" and then silence. Vapi's native transferCall tool performs the leg change;
+ * this writes the row that makes the caller recoverable if the transfer never connects.
  */
-async function transferToService(args: any, pinned: PinnedCall): Promise<string> {
+async function logHandoff(args: any, pinned: PinnedCall): Promise<string> {
   const reason = String(args.reason ?? "other");
   const allowed = ["where_is_my_car", "pricing", "complaint", "requested_human", "out_of_scope", "other"];
 
@@ -260,11 +262,9 @@ async function transferToService(args: any, pinned: PinnedCall): Promise<string>
       "tell them the service team will call them right back, then end the call politely.";
   }
 
-  // Vapi performs the actual transfer from this control instruction.
-  return JSON.stringify({
-    action: "transfer",
-    destination: { type: "number", number: transferNumber, message: "Connecting you to our service team now." },
-  });
+  // Tell the model to actually perform the transfer. Returning a control blob here would do
+  // nothing — only the native transferCall tool moves the call.
+  return "Handoff recorded. Now call the transferCall tool to connect them.";
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

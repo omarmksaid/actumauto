@@ -40,13 +40,17 @@ function toolDefinitions(ctx: InboundContext) {
       },
       server,
     },
+    // Logs WHY we're handing off and writes the recoverable handoff row. It does NOT move the
+    // call — a tool result is just text to the model. The actual leg transfer is Vapi's native
+    // transferCall tool below.
     {
       type: "function",
       function: {
-        name: "transfer_to_service",
+        name: "log_handoff",
         description:
-          "Transfer the caller to a service employee. Use for: where is my car / is it ready, " +
-          "pricing or billing, complaints, a request for a person, or anything you can't answer.",
+          "Record why this caller needs a human, then immediately call transferCall. Use for: " +
+          "where is my car / is it ready, pricing or billing, complaints, a request for a person, " +
+          "or anything you can't answer.",
         parameters: {
           type: "object",
           properties: {
@@ -67,6 +71,19 @@ function toolDefinitions(ctx: InboundContext) {
       server,
     },
   ];
+
+  // Vapi's NATIVE transfer. Only this actually moves the call leg; without it the agent says
+  // "connecting you now" and the caller sits there — which is worse than refusing outright.
+  if (ctx.transferNumber) {
+    tools.push({
+      type: "transferCall",
+      destinations: [{
+        type: "number",
+        number: ctx.transferNumber,
+        message: "Connecting you to our service team now.",
+      }],
+    });
+  }
 
   // Customer-scoped tools are only OFFERED on an identified call. They also refuse server-side on
   // an anonymous call (defense in depth) — but not advertising them keeps the model from trying.

@@ -71,7 +71,9 @@ function guardrails(ctx: InboundContext, bookingMode: BookingMode): string {
 function transferRules(ctx: InboundContext): string {
   return [
     "TRANSFERRING TO A SERVICE EMPLOYEE:",
-    "Use the transfer_to_service tool immediately, without trying to answer first, when the caller:",
+    "When the caller needs a human, call log_handoff FIRST (to record why), then IMMEDIATELY call",
+    "transferCall to actually connect them. log_handoff alone does NOT move the call — if you stop",
+    "there the caller hears you promise a transfer and then nothing happens. Do this when the caller:",
     "- asks where their car is, whether it's ready, or when it will be done (ANY question about a " +
       "vehicle currently at the shop — you have no repair-order data, so you cannot answer this " +
       "and must not try);",
@@ -80,7 +82,7 @@ function transferRules(ctx: InboundContext): string {
     "- asks to speak to a person;",
     "- asks anything you cannot answer from your tools.",
     "Tell them you're connecting them to the service team, briefly and without apology, then call " +
-      "the tool. Do not promise a specific person or a callback time.",
+      "log_handoff followed by transferCall. Do not promise a specific person or a callback time.",
   ].join("\n");
 }
 
