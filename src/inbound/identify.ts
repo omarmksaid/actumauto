@@ -47,6 +47,8 @@ export interface InboundContext {
   identifyMode: IdentifyMode;
   /** false ⇒ kill switch is on: greet briefly and hand to a human, don't converse. */
   agentEnabled: boolean;
+  /** Opening hours per weekday, dealership-local. null for a day means closed. */
+  businessHours: Record<string, [string, string] | null>;
   /** Diagnostics: how many customers matched the caller ID (0, 1, or >1 ⇒ ambiguous). */
   matchCount: number;
 }
@@ -71,7 +73,7 @@ export async function resolveInboundContext(
   const companyId = row.company_id;
 
   const [{ data: company }, { data: offerings }] = await Promise.all([
-    supabaseAdmin.from("companies").select("name, timezone, settings, agent_enabled").eq("id", companyId).single(),
+    supabaseAdmin.from("companies").select("name, timezone, settings, agent_enabled, business_hours").eq("id", companyId).single(),
     supabaseAdmin.from("service_offerings")
       .select("name, description, category, typical_duration_min")
       .eq("company_id", companyId).eq("active", true).order("category"),
@@ -94,6 +96,7 @@ export async function resolveInboundContext(
     personaTemplate: inbound.persona_prompt ?? null,
     identifyMode: (inbound.identify_mode as IdentifyMode) ?? "caller_id_only",
     agentEnabled: company?.agent_enabled !== false,
+    businessHours: (company?.business_hours ?? {}) as Record<string, [string, string] | null>,
     matchCount: Number(row.match_count ?? 0),
   };
 

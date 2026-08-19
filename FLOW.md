@@ -192,6 +192,16 @@ All transfer, all logged with a reason. Pricing is a deliberate refusal, not a g
 
 ### F. Booking
 
+**Hours are enforced twice.** The agent is told the opening hours and instructed to refuse times
+outside them; `book_service` also checks server-side and refuses, because a prompt rule is guidance
+and a captured out-of-hours request is a promise the dealership has to walk back. Vague phrasing
+("sometime next week") still passes through for an advisor to sort out. Hours live in
+`companies.business_hours` per weekday, `null` = closed.
+
+**The vehicle is always confirmed aloud** before a booking is captured — even for a customer with
+one car on file. Assuming silently is right most of the time and wrong invisibly.
+
+
 `book_service` captures a preferred time and writes an appointment as `pending_confirmation` for an
 advisor to place. In this **`soft` mode** the agent promises a confirmation text and **never claims
 a firm slot** — telling someone they are booked when they are not is worse than not answering.

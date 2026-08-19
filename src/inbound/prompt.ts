@@ -46,7 +46,9 @@ function guardrails(ctx: InboundContext, bookingMode: BookingMode): string {
     bookingMode === "soft"
       ? `You CANNOT confirm a firm appointment. If they want to book, use the book_service tool ` +
         `to capture their preferred day/time, then tell them the service team will text to ` +
-        `confirm. Never say "you're booked" or state a guaranteed slot.`
+        `confirm. Never say "you're booked" or state a guaranteed slot. Before booking, say ` +
+        `which vehicle it's for and let them correct you — never assume silently, even when ` +
+        `they only have one car on file.`
       : `Use the book_service tool to reserve a real slot before confirming any specific time. ` +
         `Only state a time the tool has confirmed back to you.`;
 
@@ -153,6 +155,36 @@ function anonymousBlock(): string {
   ].join("\n");
 }
 
+/** Spoken opening hours, so the agent can refuse an out-of-hours time instead of accepting it. */
+function hoursBlock(ctx: InboundContext): string {
+  const DAYS: [string, string][] = [
+    ["mon", "Monday"], ["tue", "Tuesday"], ["wed", "Wednesday"], ["thu", "Thursday"],
+    ["fri", "Friday"], ["sat", "Saturday"], ["sun", "Sunday"],
+  ];
+  const say = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    const ampm = h >= 12 ? "PM" : "AM";
+    const hr = h % 12 === 0 ? 12 : h % 12;
+    return m ? `${hr}:${String(m).padStart(2, "0")} ${ampm}` : `${hr} ${ampm}`;
+  };
+
+  const lines = ["WHEN WE'RE OPEN (dealership local time):"];
+  let any = false;
+  for (const [key, label] of DAYS) {
+    const v = ctx.businessHours?.[key];
+    if (v && Array.isArray(v)) { lines.push(`- ${label}: ${say(v[0])} to ${say(v[1])}`); any = true; }
+    else lines.push(`- ${label}: closed`);
+  }
+  if (!any) return "";
+
+  lines.push(
+    "NEVER accept an appointment time outside these hours, and never one in the past. If the",
+    "caller asks for a time we're closed, say so warmly, name the nearest time we ARE open, and",
+    "let them choose. Only call book_service once the time is inside our hours."
+  );
+  return lines.join("\n");
+}
+
 function offeringsBlock(ctx: InboundContext): string {
   if (!ctx.offerings.length) {
     return "SERVICES: no catalog is configured. Don't guess what we offer — transfer service questions.";
@@ -193,6 +225,8 @@ export function buildInboundSystemPrompt(ctx: InboundContext, bookingMode: Booki
     ctx.customerId ? identifiedBlock(ctx) : anonymousBlock(),
     "",
     offeringsBlock(ctx),
+    "",
+    hoursBlock(ctx),
     "",
     transferRules(ctx),
   ].join("\n");

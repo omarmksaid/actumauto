@@ -140,6 +140,64 @@ const STOPWORDS = new Set([
   "replacement", "replace", "repair", "check", "inspection", "inspect", "new", "fix",
 ]);
 
+/**
+ * Reject a requested time that falls outside opening hours. Deliberately conservative: it only
+ * refuses when it can confidently read a day and hour out of the caller's phrasing, so free-text
+ * like "sometime next week" still passes through for an advisor to sort out.
+ * Returns null when the time is acceptable (or unparseable).
+ */
+async function checkHours(companyId: string, phrase: string): Promise<string | null> {
+  const { data: co } = await supabaseAdmin
+    .from("companies").select("business_hours").eq("id", companyId).maybeSingle();
+  const hours = (co?.business_hours ?? {}) as Record<string, [string, string] | null>;
+  if (!Object.keys(hours).length) return null;
+
+  const p = phrase.toLowerCase();
+  const DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+  const NAMES: Record<string, string> = { sun: "Sunday", mon: "Monday", tue: "Tuesday",
+    wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday" };
+
+  // Which day are they asking for? Only handle forms we can read unambiguously.
+  let dayKey: string | null = null;
+  for (const d of DAYS) if (new RegExp(`\\b${NAMES[d].toLowerCase()}`).test(p)) dayKey = d;
+  if (!dayKey && /\btomorrow\b/.test(p)) dayKey = DAYS[(new Date().getDay() + 1) % 7];
+  if (!dayKey && /\btoday\b|\bthis afternoon\b|\bthis morning\b/.test(p)) dayKey = DAYS[new Date().getDay()];
+  if (!dayKey) return null;
+
+  // Which hour? "9pm", "9 pm", "9:30am", "at 9" (bare number stays ambiguous -> allow).
+  const m = p.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/);
+  if (!m) return null;
+  let hour = parseInt(m[1], 10);
+  const mins = m[2] ? parseInt(m[2], 10) : 0;
+  const ampm = m[3];
+  if (ampm === "pm" && hour !== 12) hour += 12;
+  if (ampm === "am" && hour === 12) hour = 0;
+  const asked = hour * 60 + mins;
+
+  const window = hours[dayKey];
+  const label = NAMES[dayKey];
+  const fmt = (t: string) => {
+    const [h, mm] = t.split(":").map(Number);
+    const suffix = h >= 12 ? "PM" : "AM";
+    const hr = h % 12 === 0 ? 12 : h % 12;
+    return mm ? `${hr}:${String(mm).padStart(2, "0")} ${suffix}` : `${hr} ${suffix}`;
+  };
+
+  if (!window || !Array.isArray(window)) {
+    const open = DAYS.filter((d) => hours[d]).map((d) => NAMES[d]);
+    return `We're closed ${label}. Tell the caller that, mention we're open ${open.join(", ")}, ` +
+      `and ask what else works. Do NOT book this.`;
+  }
+
+  const [o, c] = window.map((t) => { const [h, mm] = t.split(":").map(Number); return h * 60 + mm; });
+  if (asked < o || asked >= c) {
+    return `${label} we're open ${fmt(window[0])} to ${fmt(window[1])}, so that time won't work. ` +
+      `Tell the caller warmly, offer a time inside those hours, and ask what they'd prefer. ` +
+      `Do NOT book this.`;
+  }
+  return null;
+}
+
 /** The anonymous refusal. Server-side, so prompt wording is not the only thing protecting this. */
 /**
  * How callers actually talk -> the words the catalog uses. Without this, "my AC is broken" finds
@@ -252,6 +310,11 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
 
   const preferredTime = String(args.preferred_time ?? "").trim();
   if (!preferredTime) return "Ask the caller what day and time works for them first.";
+
+  // Hours are also in the prompt, but a prompt rule is guidance, not a guarantee: capturing
+  // "tomorrow at 9 PM" for a shop that shuts at 6 creates a promise someone has to walk back.
+  const outOfHours = await checkHours(pinned.companyId, preferredTime);
+  if (outOfHours) return outOfHours;
 
   // vehicle_id is the ONLY id we accept from the model — so validate it belongs to this caller.
   let vehicleId: string | null = null;
