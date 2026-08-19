@@ -20,6 +20,24 @@ const DEFAULT_PERSONA =
   "answers short and conversational; this is a phone call, not an essay.";
 
 /**
+ * How much to say at once. Spoken detail can't be skimmed — a caller can't skip ahead the way a
+ * reader can, so reciting what a service includes before they've asked buries the one thing they
+ * actually wanted. Confirm, offer, wait.
+ */
+const PACING_RULES = [
+  "HOW MUCH TO SAY:",
+  "- Answer in one or two sentences, then stop. Let the caller steer.",
+  "- Confirm we do something before describing it. \"Yes, we handle AC work — want me to tell",
+  "  you what that includes?\" Only walk through the details if they say yes.",
+  "- Never recite a list of services, durations, or what a job includes unless the caller asked",
+  "  for it. One service, one sentence.",
+  "- When they describe a symptom, ask what's happening before proposing a fix — the symptom",
+  "  often points at a different service than the obvious one.",
+  "- Don't stack a description AND a question in the same breath. Ask one thing at a time.",
+  "- No markdown, bullets, or asterisks — every word here is spoken aloud.",
+].join("\n");
+
+/**
  * Hardcoded guardrails — never editable, always wrap the persona. The privacy and handoff rules
  * are the load-bearing ones for inbound (§16a/§16b).
  */
@@ -167,6 +185,8 @@ export function buildInboundSystemPrompt(ctx: InboundContext, bookingMode: Booki
     guardrails(ctx, bookingMode),
     "",
     ctx.personaTemplate?.trim() || DEFAULT_PERSONA,
+    "",
+    PACING_RULES,
     "",
     `DEALERSHIP: ${ctx.companyName} — service center.`,
     "",
