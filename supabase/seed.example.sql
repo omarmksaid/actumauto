@@ -47,6 +47,15 @@ end $$;
 do $$
 declare v_sched uuid;
 begin
+  -- Idempotent: skip if a global schedule for this make/model already exists, so re-running
+  -- the seed can't create a duplicate (a second schedule makes vehicle matching ambiguous).
+  if exists (
+    select 1 from service_schedules
+    where company_id is null and make = 'Toyota' and model is null
+  ) then
+    return;
+  end if;
+
   insert into service_schedules (company_id, make, model, source, notes)
   values (null, 'Toyota', null,
           'Public Toyota maintenance-schedule references (compiled)',
