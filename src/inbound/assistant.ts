@@ -26,9 +26,7 @@ function HANDOFF_TOOL(server: any) {
       function: {
         name: "log_handoff",
         description:
-          "Record why this caller needs a human, then immediately call transferCall. Use for: " +
-          "where is my car / is it ready, pricing or billing, complaints, a request for a person, " +
-          "or anything you can't answer.",
+          "Record why this caller needs a human, then immediately call transferCall.",
         parameters: {
           type: "object",
           properties: {
@@ -37,11 +35,8 @@ function HANDOFF_TOOL(server: any) {
               enum: ["where_is_my_car", "pricing", "complaint", "requested_human", "out_of_scope", "other"],
               description: "Why you're transferring.",
             },
-            vehicle_hint: {
-              type: "string",
-              description: "Any vehicle the caller mentioned, in their words (e.g. 'silver RAV4'). Optional.",
-            },
-            notes: { type: "string", description: "One line of context for the advisor picking up." },
+            vehicle_hint: { type: "string", description: "Vehicle they mentioned, their words." },
+            notes: { type: "string", description: "One line of context for the advisor." },
           },
           required: ["reason"],
         },
@@ -65,12 +60,11 @@ function toolDefinitions(ctx: InboundContext) {
       function: {
         name: "lookup_services",
         description:
-          "Look up services this dealership offers. Use when the caller asks whether we do " +
-          "something, or what a service involves. Returns only real catalog entries — never prices.",
+          "Search the dealership's service catalog. Returns real entries only, never prices.",
         parameters: {
           type: "object",
           properties: {
-            query: { type: "string", description: "What the caller asked about, e.g. 'brakes', 'alignment'." },
+            query: { type: "string", description: "What they asked about, e.g. 'brakes'." },
           },
           required: ["query"],
         },
@@ -105,8 +99,7 @@ function toolDefinitions(ctx: InboundContext) {
         function: {
           name: "get_my_vehicles",
           description:
-            "Get the caller's vehicles on file. Use if they ask what we have for them, or you " +
-            "need to confirm which car they mean.",
+            "The caller's vehicles on file.",
           parameters: { type: "object", properties: {} },
         },
         server,
@@ -116,8 +109,7 @@ function toolDefinitions(ctx: InboundContext) {
         function: {
           name: "get_due_service",
           description:
-            "Get what service is coming due on the caller's vehicles, and what it involves. Use " +
-            "after resolving what they called about, to recommend service.",
+            "What service is coming due on the caller's vehicles.",
           parameters: { type: "object", properties: {} },
         },
         server,
@@ -127,24 +119,13 @@ function toolDefinitions(ctx: InboundContext) {
         function: {
           name: "book_service",
           description:
-            "Capture a service appointment request for the caller. Call once per vehicle. Use the " +
-            "wording this tool returns — do not promise a firm time it didn't confirm.",
+            "Capture an appointment request. Use the wording this tool returns back.",
           parameters: {
             type: "object",
             properties: {
-              preferred_time: {
-                type: "string",
-                description: "The day/time the caller asked for, in their words (e.g. 'Tuesday morning').",
-              },
-              vehicle_id: {
-                type: "string",
-                description: "The id from get_my_vehicles for the car being booked. Omit if only one vehicle.",
-              },
-              service_ops: {
-                type: "array",
-                items: { type: "string" },
-                description: "What they're coming in for.",
-              },
+              preferred_time: { type: "string", description: "Day/time they asked for, their words." },
+              vehicle_id: { type: "string", description: "id from get_my_vehicles. Omit if one vehicle." },
+              service_ops: { type: "array", items: { type: "string" }, description: "What they're coming in for." },
               notes: { type: "string", description: "Anything the advisor should know." },
             },
             required: ["preferred_time"],
@@ -189,8 +170,23 @@ export function buildInboundAssistant(ctx: InboundContext, voice: { provider: st
       tools: toolDefinitions(ctx),
     },
     voice: resolveVoice(voice),
-    transcriber: { provider: "deepgram", language: "multi" },
+    // nova-2-phonecall is tuned for 8kHz telephony and is materially faster than the multilingual
+    // model, which was costing ~900ms per turn. `smartFormat` cleans up numbers and times, which
+    // matters here because callers say "9 AM" and "628-358-7659".
+    transcriber: {
+      provider: "deepgram",
+      model: "nova-2-phonecall",
+      language: "en",
+      smartFormat: true,
+      // Cut the pause we wait for before deciding the caller has finished. Vapi's default errs
+      // long; a service call is short exchanges, not monologues.
+      endpointing: 150,
+    },
     maxDurationSeconds: 900,                     // inbound runs longer than a reminder call
+    // Speak the first chunk as soon as a sentence is ready instead of waiting for the whole
+    // response — the largest perceived-latency win, since 1.6s of LLM time is otherwise silence.
+    responseDelaySeconds: 0,
+    llmRequestDelaySeconds: 0,
     endCallFunctionEnabled: true,
     recordingEnabled: true,
     // Identifiers only — no per-caller content in metadata (§4 no-leakage rule).
