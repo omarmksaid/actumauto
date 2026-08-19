@@ -24,10 +24,13 @@ const cid = (c: any) => c.get("companyId") as string;
 settingsRoutes.get("/", async (c) => {
   const companyId = cid(c);
   const { data: company } = await supabaseAdmin
-    .from("companies").select("name, timezone, settings").eq("id", companyId).single();
+    .from("companies").select("name, timezone, settings, business_hours, agent_enabled").eq("id", companyId).single();
   const settings = (company?.settings ?? {}) as any;
   return c.json({
     company: { name: company?.name, timezone: company?.timezone },
+    // The agent quotes these to callers and refuses bookings outside them (§16d).
+    business_hours: company?.business_hours ?? {},
+    agent_enabled: company?.agent_enabled !== false,
     voice: settings.voice ?? { provider: "cartesia", voice_id: "" },
     persona_prompt: settings.persona_prompt ?? "",
     customer_types: settings.customer_types ?? ["loyal", "lapsed", "new", "vip"],
@@ -46,6 +49,28 @@ settingsRoutes.get("/", async (c) => {
 settingsRoutes.put("/", requireAdmin, async (c) => {
   const companyId = cid(c);
   const body = await c.req.json<any>();
+
+  if (body.business_hours) {
+    const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+    const clean: Record<string, [string, string] | null> = {};
+    for (const d of DAYS) {
+      const v = (body.business_hours as any)[d];
+      // A day is either a valid [open, close] pair or closed. Anything malformed becomes closed
+      // rather than being stored half-formed — the agent would otherwise quote nonsense hours.
+      if (Array.isArray(v) && v.length === 2 &&
+          /^\d{2}:\d{2}$/.test(String(v[0])) && /^\d{2}:\d{2}$/.test(String(v[1])) &&
+          String(v[0]) < String(v[1])) {
+        clean[d] = [String(v[0]), String(v[1])];
+      } else {
+        clean[d] = null;
+      }
+    }
+    await supabaseAdmin.from("companies").update({ business_hours: clean }).eq("id", companyId);
+  }
+
+  if (typeof body.agent_enabled === "boolean") {
+    await supabaseAdmin.from("companies").update({ agent_enabled: body.agent_enabled }).eq("id", companyId);
+  }
 
   if (body.voice || body.persona_prompt != null || body.customer_types || body.inbound) {
     const { data: company } = await supabaseAdmin

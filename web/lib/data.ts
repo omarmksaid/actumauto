@@ -93,6 +93,11 @@ export const demoTeam = {
 // ── Settings ──  apiCall("/settings")  /  apiCall("/settings/numbers")
 export const demoSettings = {
   company: { name: "Milpitas Toyota", timezone: "America/Los_Angeles" },
+  agent_enabled: true,
+  business_hours: {
+    mon: ["07:00", "18:00"], tue: ["07:00", "18:00"], wed: ["07:00", "18:00"],
+    thu: ["07:00", "18:00"], fri: ["07:00", "18:00"], sat: ["08:00", "16:00"], sun: null,
+  },
   voice: { provider: "cartesia", voice_id: "sonic-english" },
   persona_prompt: "You are the service department's phone assistant for Milpitas Toyota. Warm, efficient, and respectful of the caller's time.",
   customer_types: ["loyal", "lapsed", "new", "vip"],
