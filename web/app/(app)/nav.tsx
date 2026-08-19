@@ -28,7 +28,7 @@ export function Nav() {
 
   return (
     <nav className="sidebar">
-      <div className="brand">Touchpoint <em>Center</em></div>
+      <div className="brand">Actum<em>Auto</em></div>
       {NAV.map((item) => {
         const active = path === item.href || path.startsWith(item.href + "/");
         return (

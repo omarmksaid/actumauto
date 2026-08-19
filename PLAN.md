@@ -1,4 +1,4 @@
-# Touchpoint Center — Architecture & Build Plan
+# ActumAuto — Architecture & Build Plan
 
 **AI phone agent for an auto-dealership service department. INBOUND ONLY.**
 
@@ -38,7 +38,7 @@ Resend (transactional email, currently unwired).
 
 ## 1. What changes vs. realtyAI
 
-| realtyAI | Touchpoint Center |
+| realtyAI | ActumAuto |
 |---|---|
 | Leads arrive via Meta/Google webhooks in real time | Customers arrive via **CSV upload** (batch), with column-mapping |
 | Router decides staffed-hours → human, else enqueue | **Scheduler** slots calls by service-due date, paced by number pool |

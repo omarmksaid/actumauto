@@ -41,7 +41,7 @@ export default function Signup() {
       }
 
       // 2. create_workspace RPC — dealership + owner membership + default cadence, atomically.
-      //    Param names match the Touchpoint Center RPC (seed.example.sql): p_name, p_timezone.
+      //    Param names match the ActumAuto RPC (seed.example.sql): p_name, p_timezone.
       const { error: wsError } = await supabase.rpc("create_workspace", {
         p_name: name, p_timezone: tz,
       });
@@ -56,7 +56,7 @@ export default function Signup() {
 
   return (
     <div style={{ maxWidth: 400, margin: "9vh auto", padding: "0 20px" }}>
-      <Link href="/" className="brand" style={{ padding: 0 }}>Touchpoint <em>Center</em></Link>
+      <Link href="/" className="brand" style={{ padding: 0 }}>Actum<em>Auto</em></Link>
       <h1 className="page-title" style={{ marginTop: 18 }}>Create your workspace</h1>
       <p className="page-sub">Set up your dealership&apos;s service-reminder outreach.</p>
       <form onSubmit={handleSubmit} className="card card-pad" style={{ display: "flex", flexDirection: "column", gap: 12 }}>

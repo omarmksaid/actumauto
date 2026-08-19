@@ -34,7 +34,7 @@ export const softBooking: BookingProvider = {
     if (error) throw error;
 
     // Tag the notes with our appointment id for the shown-RO loop (§6b), then persist.
-    const tag = `TPC:${data.id}`;
+    const tag = `AA:${data.id}`;
     await supabaseAdmin.from("appointments")
       .update({ notes: `${input.notes} ${tag}`.trim() }).eq("id", data.id);
 

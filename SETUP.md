@@ -1,4 +1,4 @@
-# Touchpoint Center — Setup & Configuration
+# ActumAuto — Setup & Configuration
 
 Everything you need to take the current code from "typechecks locally" to "answers a real call."
 Ordered by dependency. See `PLAN.md` for the why behind each choice.
@@ -165,7 +165,7 @@ Both services deploy from the same repo; they differ only in root directory. Rai
 
 **Push to GitHub first** — Railway deploys from a repo:
 ```bash
-git remote add origin https://github.com/<you>/touchpoint-center.git
+git remote add origin https://github.com/<you>/actumauto.git
 git push -u origin main
 ```
 

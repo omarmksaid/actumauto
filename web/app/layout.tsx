@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Touchpoint Center — bring service customers back",
+  title: "ActumAuto — AI service center line",
   description: "AI service-reminder outreach for dealership service departments.",
 };
 

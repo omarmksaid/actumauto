@@ -68,7 +68,7 @@ function JoinForm() {
 
   return (
     <div style={{ maxWidth: 380, margin: "9vh auto", padding: "0 20px" }}>
-      <Link href="/" className="brand" style={{ padding: 0 }}>Touchpoint <em>Center</em></Link>
+      <Link href="/" className="brand" style={{ padding: 0 }}>Actum<em>Auto</em></Link>
       <h1 className="page-title" style={{ marginTop: 18 }}>Join{company ? ` ${company}` : ""}</h1>
       <p className="page-sub">Set a password to accept your invite.</p>
       <form onSubmit={handleSubmit} className="card card-pad" style={{ display: "flex", flexDirection: "column", gap: 12 }}>

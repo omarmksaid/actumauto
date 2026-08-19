@@ -22,7 +22,7 @@ export interface CreateAppointmentInput {
   vehicleId: string | null;
   preferredTime: string;    // free-text or ISO the customer stated
   serviceOps: string[];
-  notes: string;            // includes the TPC:<appointment_id> tag for the shown-RO loop (§6b)
+  notes: string;            // includes the AA:<appointment_id> tag for the shown-RO loop (§6b)
 }
 
 export interface CreateAppointmentResult {

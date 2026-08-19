@@ -32,7 +32,7 @@ export default function Login() {
 
   return (
     <div style={{ maxWidth: 380, margin: "10vh auto", padding: "0 20px" }}>
-      <Link href="/" className="brand" style={{ padding: 0 }}>Touchpoint <em>Center</em></Link>
+      <Link href="/" className="brand" style={{ padding: 0 }}>Actum<em>Auto</em></Link>
       <h1 className="page-title" style={{ marginTop: 18 }}>Sign in</h1>
       <p className="page-sub">Use your work email.</p>
       <form onSubmit={handleSubmit} className="card card-pad" style={{ display: "flex", flexDirection: "column", gap: 12 }}>

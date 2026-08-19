@@ -1,4 +1,4 @@
--- seed.example.sql — run AFTER 0001_init.sql on a NEW Touchpoint Center database.
+-- seed.example.sql — run AFTER 0001_init.sql on a NEW ActumAuto database.
 -- Sets up: storage buckets, the single global_settings row, the create_workspace RPC,
 -- and platform-global Toyota service schedules (company_id = null; every dealership sees them).
 --
