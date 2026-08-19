@@ -30,9 +30,11 @@ export const env = {
   TELNYX_API_KEY: process.env.TELNYX_API_KEY ?? "",
   TELNYX_MESSAGING_PROFILE_ID: process.env.TELNYX_MESSAGING_PROFILE_ID ?? "",
 
-  // Vapi voice orchestrator.
-  VAPI_API_KEY: process.env.VAPI_API_KEY ?? "",
-  VAPI_WEBHOOK_SECRET: process.env.VAPI_WEBHOOK_SECRET ?? "",
+  // Vapi voice orchestrator. BOTH are required: the inbound assistant/tools endpoints and the
+  // webhook authenticate on VAPI_WEBHOOK_SECRET, and an empty secret rejects EVERY inbound call
+  // with a 401 that looks like a Vapi problem rather than a config one. Fail at boot instead.
+  VAPI_API_KEY: req("VAPI_API_KEY"),
+  VAPI_WEBHOOK_SECRET: req("VAPI_WEBHOOK_SECRET"),
   DEFAULT_TTS_PROVIDER: process.env.DEFAULT_TTS_PROVIDER ?? "cartesia",
   DEFAULT_VOICE_ID: process.env.DEFAULT_VOICE_ID ?? "",
   ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY ?? "",
