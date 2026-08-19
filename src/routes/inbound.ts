@@ -287,7 +287,14 @@ async function resolvePinnedCall(vapiCallId: string | null): Promise<PinnedCall 
 async function companyVoice(companyId: string): Promise<{ provider: string; voice_id: string }> {
   const { data } = await supabaseAdmin.from("companies").select("settings").eq("id", companyId).single();
   const settings = (data?.settings ?? {}) as any;
-  const voice = settings.inbound?.voice ?? settings.voice ?? {};
+
+  // A dealership can explicitly opt into Vapi's built-in voice by storing
+  // { provider: "vapi" }. That must WIN over the env default — otherwise `??` falls straight
+  // through to DEFAULT_TTS_PROVIDER and "use the built-in" is unreachable.
+  const configured = settings.inbound?.voice ?? settings.voice;
+  if (configured?.provider === "vapi") return { provider: "vapi", voice_id: "" };
+
+  const voice = configured ?? {};
   return {
     provider: voice.provider ?? env.DEFAULT_TTS_PROVIDER,
     voice_id: voice.voice_id ?? env.DEFAULT_VOICE_ID,

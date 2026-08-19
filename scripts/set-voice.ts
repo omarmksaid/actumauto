@@ -29,8 +29,9 @@ async function main() {
 
   const settings = { ...((co.settings ?? {}) as any) };
   settings.inbound = { ...(settings.inbound ?? {}) };
+  // Store an explicit marker rather than null — null would fall through to the env default.
   settings.inbound.voice = provider === "vapi"
-    ? null                                   // null ⇒ fall through to the built-in default
+    ? { provider: "vapi", voice_id: "" }
     : { provider, voice_id: voiceId };
 
   const { error } = await sb.from("companies").update({ settings }).eq("id", co.id);
