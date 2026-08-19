@@ -166,10 +166,14 @@ function toolDefinitions(ctx: InboundContext) {
  */
 function resolveVoice(voice: { provider: string; voice_id: string }) {
   if (voice.voice_id?.trim()) {
-    return { provider: voice.provider, voiceId: voice.voice_id.trim() };
+    const v: any = { provider: voice.provider, voiceId: voice.voice_id.trim() };
+    // Vapi's own voices default to the legacy V1 model unless version is set. V2 is both better
+    // quality and much cheaper — TTS was $0.12 of a $0.36 call at V1 rates.
+    if (voice.provider === "vapi") v.version = 2;
+    return v;
   }
   // No voice configured — fall back to a Vapi-managed one, which needs no provider credentials.
-  return { provider: "vapi", voiceId: "Elliot" };
+  return { provider: "vapi", voiceId: "Elliot", version: 2 };
 }
 
 export function buildInboundAssistant(ctx: InboundContext, voice: { provider: string; voice_id: string }) {

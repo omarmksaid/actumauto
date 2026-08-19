@@ -70,23 +70,9 @@ function guardrails(ctx: InboundContext, bookingMode: BookingMode): string {
     "- If the caller asks to stop being contacted, acknowledge and emit the tag [OPTOUT].",
   ];
 
-  if (!ctx.customerId) {
-    // The anonymous privacy rule. Belt-and-braces: the tools also refuse (§16e), so a prompt-
-    // injection that talks the model past this line still gets nothing back.
-    lines.push(
-      "- IMPORTANT: You have NOT identified this caller. You do not know who they are, what they " +
-        "drive, or their service history. Do NOT ask for or speculate about their vehicles, and " +
-        "do NOT claim to look up their account — you cannot. Answer general questions about our " +
-        "services and hours. For anything needing their account or vehicle, transfer them to the " +
-        "service team."
-    );
-  } else {
-    lines.push(
-      "- Only discuss the vehicles listed below. If they mention a vehicle that isn't listed, don't " +
-        "assume it's theirs — offer to transfer them to the service team to sort it out."
-    );
-  }
-
+  // NOTE: no identified/anonymous branch here. This block is the cache prefix, so it must be
+  // byte-identical for every caller at this dealership; the per-call privacy rule lives in the
+  // dynamic section instead (see PRIVACY_RULE_* below).
   return lines.join("\n");
 }
 
@@ -111,6 +97,18 @@ const CLOSING_RULES = [
   "- A good call is SHORT. Aim to resolve and close in under two minutes.",
   "- Do NOT end the call while transferring; the transfer tool handles that.",
 ].join("\n");
+
+/** Privacy rule for a caller we could NOT identify. Dynamic — kept out of the cache prefix. */
+const PRIVACY_RULE_ANON =
+  "- IMPORTANT: You have NOT identified this caller. You do not know who they are, what they " +
+  "drive, or their service history. Do NOT ask for or speculate about their vehicles, and do NOT " +
+  "claim to look up their account — you cannot. Answer general questions about our services and " +
+  "hours. For anything needing their account or vehicle, transfer them to the service team.";
+
+/** Privacy rule for an identified caller. */
+const PRIVACY_RULE_KNOWN =
+  "- Only discuss the vehicles listed below. If they mention a vehicle that isn't listed, don't " +
+  "assume it's theirs — offer to transfer them to the service team to sort it out.";
 
 /** The transfer policy block (§16b) — the single most important inbound behavior. */
 function transferRules(ctx: InboundContext): string {
@@ -193,7 +191,7 @@ function hoursBlock(ctx: InboundContext): string {
     return m ? `${hr}:${String(m).padStart(2, "0")} ${ampm}` : `${hr} ${ampm}`;
   };
 
-  const lines = [`TODAY IS ${ctx.todayLabel}.`, "", "WHEN WE'RE OPEN (dealership local time):"];
+  const lines = ["WHEN WE'RE OPEN (dealership local time):"];
   let any = false;
   for (const [key, label] of DAYS) {
     const v = ctx.businessHours?.[key];
@@ -227,6 +225,18 @@ function offeringsBlock(ctx: InboundContext): string {
   return lines.join("\n");
 }
 
+/**
+ * Prompt caching (Anthropic, via Vapi).
+ *
+ * Caching keys on an exact PREFIX match, so anything that differs per call invalidates everything
+ * after it. The caller's name sat ~1/4 of the way in, which meant ~6,700 chars of fixed rules —
+ * guardrails, services, hours, closing and transfer policy — were re-billed on every turn of
+ * every call (llmCachedPromptTokens: 0 across a 68k-token call).
+ *
+ * So the prompt is now strictly two halves:
+ *   1. STATIC  — identical for every caller at this dealership, and cacheable.
+ *   2. DYNAMIC — who called, what they drive, today's date. Appended last.
+ */
 export function buildInboundSystemPrompt(ctx: InboundContext, bookingMode: BookingMode): string {
   // KILL SWITCH: don't hold a conversation. Say one line and hand off. Dead air would be worse
   // for the caller than a brief handoff, so we still answer — we just stop being an agent.
@@ -240,7 +250,8 @@ export function buildInboundSystemPrompt(ctx: InboundContext, bookingMode: Booki
     ].join("\n");
   }
 
-  return [
+  // ── STATIC half: same bytes for every caller, so it can be cached ──
+  const static_ = [
     guardrails(ctx, bookingMode),
     "",
     ctx.personaTemplate?.trim() || DEFAULT_PERSONA,
@@ -248,8 +259,6 @@ export function buildInboundSystemPrompt(ctx: InboundContext, bookingMode: Booki
     PACING_RULES,
     "",
     `DEALERSHIP: ${ctx.companyName} — service center.`,
-    "",
-    ctx.customerId ? identifiedBlock(ctx) : anonymousBlock(),
     "",
     offeringsBlock(ctx),
     "",
@@ -259,6 +268,18 @@ export function buildInboundSystemPrompt(ctx: InboundContext, bookingMode: Booki
     "",
     transferRules(ctx),
   ].join("\n");
+
+  // ── DYNAMIC half: differs per call, so everything above it stays cacheable ──
+  const dynamic = [
+    "── THIS CALL (these override the general rules above) ──",
+    ctx.customerId ? PRIVACY_RULE_KNOWN : PRIVACY_RULE_ANON,
+    "",
+    `TODAY IS ${ctx.todayLabel}.`,
+    "",
+    ctx.customerId ? identifiedBlock(ctx) : anonymousBlock(),
+  ].join("\n");
+
+  return `${static_}\n\n${dynamic}`;
 }
 
 /** What the agent says when it picks up. */
