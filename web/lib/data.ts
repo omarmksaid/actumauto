@@ -85,10 +85,20 @@ export const demoCallDetail = {
 };
 
 // ── Directory ──  apiCall("/agent/directory?q=")  /  apiCall("/agent/customers/:id")
-export const demoDirectory = [
-  { customer_id: "cust1", full_name: "Maria Chen", phone: "+14085550142", email: "maria@example.com", customer_type: "loyal", vehicle_count: 2 },
-  { customer_id: "cust2", full_name: "Devon Park", phone: "+14085550199", email: "devon@example.com", customer_type: "lapsed", vehicle_count: 1 },
+export const demoDirectory: any[] = [
+  { customer_id: "cust1", full_name: "Maria Chen", phone: "+14085550142", email: "maria@example.com",
+    customer_type: "loyal", vehicle_count: 2,
+    vehicles: [
+      { id: "v1", year: 2022, make: "Toyota", model: "RAV4", mileage: 31200 },
+      { id: "v2", year: 2019, make: "Toyota", model: "Sienna", mileage: 74050 },
+    ] },
+  { customer_id: "cust2", full_name: "Devon Park", phone: "+14085550199", email: "devon@example.com",
+    customer_type: "lapsed", vehicle_count: 1,
+    vehicles: [{ id: "v3", year: 2020, make: "Toyota", model: "Camry", mileage: 48900 }] },
+  { customer_id: "cust3", full_name: "Priya Nair", phone: "+14085550188", email: null,
+    customer_type: null, vehicle_count: 0, vehicles: [] },
 ];
+
 // ── Team ──  apiCall("/team")
 export const demoTeam = {
   members: [

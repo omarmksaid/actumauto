@@ -367,24 +367,43 @@ agentRoutes.get("/directory", async (c) => {
   if (!q) {
     const { data, error } = await supabaseAdmin
       .from("customers")
-      .select("id, full_name, phone, email, customer_type, vehicles(id)")
+      .select("id, full_name, phone, email, customer_type, vehicles(id, year, make, model, mileage)")
       .eq("company_id", companyId)
       .order("full_name", { ascending: true })
       .limit(200);
     if (error) return c.json({ error: error.message }, 500);
-    return c.json({
-      results: (data ?? []).map((r: any) => ({
-        customer_id: r.id, full_name: r.full_name, phone: r.phone, email: r.email,
-        customer_type: r.customer_type, vehicle_count: (r.vehicles ?? []).length,
-      })),
-      total: data?.length ?? 0,
-    });
+    return c.json({ results: (data ?? []).map(toDirectoryRow), total: data?.length ?? 0 });
   }
 
+  // The RPC returns a vehicle COUNT; the tiles show actual cars, so hydrate them for the matches.
   const { data, error } = await supabaseAdmin.rpc("search_customers", { p_company_id: companyId, p_query: q });
   if (error) return c.json({ error: error.message }, 500);
-  return c.json({ results: data ?? [] });
+  const ids = (data ?? []).map((r: any) => r.customer_id);
+  if (!ids.length) return c.json({ results: [] });
+
+  const { data: full } = await supabaseAdmin
+    .from("customers")
+    .select("id, full_name, phone, email, customer_type, vehicles(id, year, make, model, mileage)")
+    .in("id", ids)
+    .order("full_name", { ascending: true });
+  return c.json({ results: (full ?? []).map(toDirectoryRow) });
 });
+
+/** One directory tile's worth of data. Vehicles are capped — a fleet customer shouldn't render 40. */
+function toDirectoryRow(r: any) {
+  const vehicles = (r.vehicles ?? []).map((v: any) => ({
+    id: v.id, year: v.year, make: v.make, model: v.model, mileage: v.mileage,
+  }));
+  return {
+    customer_id: r.id,
+    full_name: r.full_name,
+    phone: r.phone,
+    email: r.email,
+    customer_type: r.customer_type,
+    vehicle_count: vehicles.length,
+    vehicles: vehicles.slice(0, 4),
+  };
+}
 
 // ── One customer: profile + vehicles + upcoming service + recent conversations ─
 agentRoutes.get("/customers/:id", async (c) => {
