@@ -37,16 +37,23 @@ export const demoImports: ImportRow[] = [
 
 // ── Today (inbound) ──  apiCall("/agent/funnel")
 export const demoFunnel = {
+  range: "1d",
   inbound: {
-    calls_30d: 84, calls_today: 6, identified: 51, anonymous: 33, ambiguous: 7,
-    identify_rate: 0.607, booked: 19, avg_duration_sec: 148, cost_usd_30d: 18.42,
+    calls: 18, identified: 12, anonymous: 6, ambiguous: 1,
+    identify_rate: 0.667, booked: 5, avg_duration_sec: 74,
+    cost_usd: 1.53, cost_per_call: 0.085,
   },
-  appointments: { pending_confirmation: 12, confirmed: 9, shown: 7, no_show: 1 },
+  volume: Array.from({ length: 24 }, (_, h) => ({
+    label: String(h).padStart(2, "0"),
+    count: h < 7 || h > 18 ? 0 : [1, 2, 3, 2, 4, 1, 2, 3, 1, 0, 1, 2][h - 7] ?? 0,
+  })),
+  appointments: { pending_confirmation: 5, confirmed: 3, shown: 2, no_show: 1 },
   handoffs: {
-    total: 29, open: 11, needs_callback: 3,
-    by_reason: { where_is_my_car: 14, pricing: 8, requested_human: 4, complaint: 2, out_of_scope: 1 },
+    total: 7, open: 2, oldest_open_min: 12, needs_callback: 1, failed_transfers: 1,
+    by_reason: { where_is_my_car: 3, pricing: 2, requested_human: 1, complaint: 1 },
   },
 };
+
 
 // ── Calls list ──  apiCall("/agent/calls")
 export interface CallRow {

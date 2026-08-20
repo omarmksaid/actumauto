@@ -6,7 +6,7 @@ import { createClient, isDemo } from "@/lib/supabase";
 
 // Inbound-only (PLAN.md §16): no Campaigns — the system doesn't place calls any more.
 const NAV = [
-  { href: "/today", label: "Today" },
+  { href: "/dashboard", label: "Dashboard" },
   { href: "/calls", label: "Calls" },
   { href: "/handoffs", label: "Handoffs" },
   { href: "/directory", label: "Customer Directory" },

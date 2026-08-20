@@ -57,7 +57,7 @@ function JoinForm() {
 
       // Accept: creates the membership from the invite (JWT-verified server-side).
       await apiCall("/team/accept", { method: "POST", body: JSON.stringify({ token, phone: phone || null }) });
-      router.push("/today");
+      router.push("/dashboard");
     } catch (e: any) {
       setError(e.message ?? "Something went wrong");
       setLoading(false);

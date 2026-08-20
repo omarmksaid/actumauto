@@ -32,7 +32,7 @@ export default function ResetPassword() {
       setError(`${err.message} — request a new reset link if this one has expired.`);
       return;
     }
-    router.push("/today");
+    router.push("/dashboard");
   }
 
   return (

@@ -22,12 +22,12 @@ export default function Login() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    if (isDemo) { router.push("/today"); return; }  // demo: no auth, straight in
+    if (isDemo) { router.push("/dashboard"); return; }  // demo: no auth, straight in
     setLoading(true);
     const supabase = createClient();
     const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
     if (authError) { setError(authError.message); setLoading(false); return; }
-    router.push("/today");
+    router.push("/dashboard");
   }
 
   return (

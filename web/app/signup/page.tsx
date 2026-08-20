@@ -22,7 +22,7 @@ export default function Signup() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    if (isDemo) { router.push("/today"); return; }
+    if (isDemo) { router.push("/dashboard"); return; }
     setLoading(true);
     try {
       const supabase = createClient();
@@ -47,7 +47,7 @@ export default function Signup() {
       });
       if (wsError) { setError(wsError.message); setLoading(false); return; }
 
-      router.push("/today");
+      router.push("/dashboard");
     } catch (err: any) {
       setError(err.message ?? "Something went wrong");
       setLoading(false);
