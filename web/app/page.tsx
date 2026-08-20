@@ -11,16 +11,31 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
+import { createClient, isDemo } from "@/lib/supabase";
 
 export default function Landing() {
   const [open, setOpen] = useState(false);
+  const router = useRouter();
 
-  // /?contact=1 opens the form directly, so "Contact sales" links elsewhere land on it.
   useEffect(() => {
-    if (typeof window !== "undefined" &&
-        new URLSearchParams(window.location.search).get("contact") === "1") setOpen(true);
-  }, []);
+    const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    // /?contact=1 opens the form directly, so "Contact sales" links elsewhere land on it.
+    if (params?.get("contact") === "1") setOpen(true);
+
+    if (isDemo) return;
+    // ...but an explicit ?contact=1 means they WANT the marketing page, even signed in.
+    if (params?.get("contact") === "1") return;
+
+    // Signed-in visitors go to the dashboard. The page still RENDERS for everyone — gating it
+    // behind a session check would ship an empty marketing page to crawlers and slow connections.
+    let cancelled = false;
+    createClient().auth.getSession().then(({ data: { session } }) => {
+      if (!cancelled && session) router.replace("/dashboard");
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [router]);
 
   return (
     <div style={{ background: "var(--bg)", minHeight: "100vh" }}>

@@ -17,7 +17,15 @@ export default function Login() {
     if (typeof window !== "undefined") {
       setRemoved(new URLSearchParams(window.location.search).get("removed") === "1");
     }
-  }, []);
+    if (isDemo) return;
+    // Already signed in? Don't show a sign-in form. ?removed=1 is the exception — that user was
+    // just signed out of a workspace and needs to see why.
+    if (typeof window !== "undefined" &&
+        new URLSearchParams(window.location.search).get("removed") === "1") return;
+    createClient().auth.getSession().then(({ data: { session } }) => {
+      if (session) router.replace("/dashboard");
+    }).catch(() => {});
+  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
