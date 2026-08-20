@@ -88,13 +88,16 @@ function AudioPlayer({ src, duration }: { src: string; duration: number }) {
         const buf = await (await fetch(src)).arrayBuffer();
         const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
         const audio = await ctx.decodeAudioData(buf);
-        const N = 200;
+        // Denser sampling + RMS. Mean-of-absolute averages speech down toward zero between
+        // syllables, which is what made the waveform read as sparse blocks with gaps; RMS keeps
+        // the perceived loudness of a continuous utterance continuous.
+        const N = 420;
         const envelope = (ch: Float32Array) => {
-          const block = Math.floor(ch.length / N), out: number[] = [];
+          const block = Math.max(1, Math.floor(ch.length / N)), out: number[] = [];
           for (let i = 0; i < N; i++) {
-            let sum = 0;
-            for (let j = 0; j < block; j++) sum += Math.abs(ch[i * block + j] || 0);
-            out.push(sum / block);
+            let sq = 0;
+            for (let j = 0; j < block; j++) { const v = ch[i * block + j] || 0; sq += v * v; }
+            out.push(Math.sqrt(sq / block));
           }
           return out;
         };
@@ -116,6 +119,20 @@ function AudioPlayer({ src, duration }: { src: string; duration: number }) {
 
   const pct = len ? Math.min(1, t / len) : 0;
 
+  // <audio> only fires timeupdate ~4x/second, which reads as a stuttering playhead. Sample the
+  // element on every animation frame while playing instead.
+  useEffect(() => {
+    if (!playing) return;
+    let raf = 0;
+    const tick = () => {
+      const a = audioRef.current;
+      if (a && !a.paused) setT(a.currentTime);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing]);
+
   function toggle() {
     const a = audioRef.current; if (!a) return;
     if (a.paused) { a.play(); setPlaying(true); } else { a.pause(); setPlaying(false); }
@@ -123,7 +140,12 @@ function AudioPlayer({ src, duration }: { src: string; duration: number }) {
   function seek(e: React.MouseEvent<HTMLDivElement>) {
     const a = audioRef.current; if (!a || !len) return;
     const r = e.currentTarget.getBoundingClientRect();
-    a.currentTime = ((e.clientX - r.left) / r.width) * len;
+    // Same geometry as the playhead: strip the padding and the label gutter, or a click lands
+    // ~50px off from where the line sits.
+    const barsLeft = r.left + PAD + LABEL_W + GAP;
+    const barsWidth = r.width - (2 * PAD + LABEL_W + GAP);
+    const ratio = Math.max(0, Math.min(1, (e.clientX - barsLeft) / barsWidth));
+    a.currentTime = ratio * len;
     setT(a.currentTime);
   }
   function cycleRate() {
@@ -147,10 +169,14 @@ function AudioPlayer({ src, duration }: { src: string; duration: number }) {
         {peaks?.customer && (
           <Track bars={peaks.customer} pct={pct} color="var(--accent)" label="Caller" />
         )}
-        {/* Playhead spans both tracks so the two are read as one timeline. */}
+        {/* Playhead spans both tracks so they read as one timeline. Positioned against the BAR
+            area, not the container — the labels take a fixed 46px + 8px gap on the left, and
+            ignoring that offset made the line drift further behind as playback advanced. */}
         <div style={{
-          position: "absolute", top: 6, bottom: 6, left: `calc(8px + ${pct * 100}% * 0.985)`,
-          width: 1.5, background: "var(--ink)", opacity: 0.55, pointerEvents: "none",
+          position: "absolute", top: 6, bottom: 6,
+          left: `calc(${PAD + LABEL_W + GAP}px + (100% - ${2 * PAD + LABEL_W + GAP}px) * ${pct})`,
+          width: 2, background: "var(--ink)", opacity: 0.6, pointerEvents: "none",
+          borderRadius: 1,
         }} />
       </div>
 
@@ -175,26 +201,35 @@ function AudioPlayer({ src, duration }: { src: string; duration: number }) {
 /** One speaker's waveform. Played bars are solid; the rest are ghosted. */
 function Track({ bars, pct, color, label }:
   { bars: number[] | null; pct: number; color: string; label: string }) {
-  const data = bars ?? Array.from({ length: 200 }, () => 0.08);
+  const data = bars ?? Array.from({ length: 420 }, () => 0.06);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <span className="hint" style={{ width: 46, fontSize: 11, color, fontWeight: 700, flexShrink: 0 }}>
+      <span className="hint" style={{ width: LABEL_W, fontSize: 11, color, fontWeight: 700, flexShrink: 0 }}>
         {label}
       </span>
-      <div style={{ display: "flex", alignItems: "center", gap: 1, height: 34, flex: 1 }}>
+      {/* gap:0 with a sub-pixel bar width reads as a continuous waveform rather than a bar chart. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 0, height: 34, flex: 1 }}>
         {data.map((v, i) => (
           <div key={i} style={{
             flex: 1,
-            height: `${Math.max(2, v * 100)}%`,
-            borderRadius: 1,
+            minWidth: 0,
+            margin: "0 0.5px",
+            // sqrt curve: quiet speech is still visible instead of collapsing to a flat line.
+            height: `${Math.max(4, Math.sqrt(v) * 100)}%`,
+            borderRadius: 0.5,
             background: color,
-            opacity: i / data.length <= pct ? 1 : 0.22,
+            opacity: i / data.length <= pct ? 1 : 0.25,
           }} />
         ))}
       </div>
     </div>
   );
 }
+
+/** Width of the "Agent"/"Caller" gutter. Shared so the playhead and seek use identical geometry. */
+const LABEL_W = 46;
+const PAD = 8;    // container padding, both sides
+const GAP = 8;    // gap between the label gutter and the bars
 
 const fmtT = (s: number) =>
   `${Math.floor((s || 0) / 60)}:${String(Math.floor(s || 0) % 60).padStart(2, "0")}`;
