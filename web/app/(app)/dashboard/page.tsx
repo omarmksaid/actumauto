@@ -126,9 +126,12 @@ export default function Dashboard() {
       <div className="card card-pad" style={{ marginTop: 16 }}>
         <div className="row-between" style={{ marginBottom: 10 }}>
           <span style={{ fontWeight: 650 }}>Call volume</span>
-          <span className="hint">{range === "1d" ? "Hourly, today" : "Daily"}</span>
+          <span className="hint">
+            {range === "1d" ? "Hourly" : range === "ytd" || range === "all" ? "Monthly" : "Daily"}
+            {(d.volume ?? []).length > 0 && ` · peak ${Math.max(...(d.volume ?? []).map((v: any) => v.count))}`}
+          </span>
         </div>
-        <Sparkline points={d.volume ?? []} />
+        <Sparkline points={d.volume ?? []} hourly={range === "1d"} />
       </div>
 
       <div className="grid-2" style={{ marginTop: 16 }}>
@@ -190,27 +193,127 @@ function FunnelStep({ n, label, accent }: { n: number; label: string; accent?: b
   );
 }
 
-/** Inline SVG — a chart library isn't worth 40KB for one sparkline. */
-function Sparkline({ points }: { points: { label: string; count: number }[] }) {
+/**
+ * Inline SVG chart — a library isn't worth 40KB for one series.
+ *
+ * Hovering snaps to the nearest point and shows its label and value, because a bare line can't
+ * tell you WHICH day a peak was, which is the first thing anyone asks. Smoothed with a monotone
+ * cubic fit: straight segments between sparse daily counts read as sharper swings than the data
+ * supports, but a naive spline overshoots and invents values below zero.
+ */
+function Sparkline({ points, hourly }: { points: { label: string; count: number }[]; hourly: boolean }) {
+  const [hover, setHover] = useState<number | null>(null);
   if (!points.length) return <div className="hint">No data yet.</div>;
-  const W = 900, H = 90, max = Math.max(1, ...points.map((p) => p.count));
-  const step = points.length > 1 ? W / (points.length - 1) : W;
-  const path = points.map((p, idx) =>
-    `${idx === 0 ? "M" : "L"} ${(idx * step).toFixed(1)} ${(H - (p.count / max) * (H - 10)).toFixed(1)}`).join(" ");
+
+  const W = 900, H = 150, PAD_T = 14, PAD_B = 26;
+  const max = Math.max(1, ...points.map((p) => p.count));
+  const x = (i: number) => (points.length === 1 ? W / 2 : (i / (points.length - 1)) * W);
+  const y = (v: number) => PAD_T + (1 - v / max) * (H - PAD_T - PAD_B);
+
+  // Monotone cubic: keeps the curve inside the data's own range so it never dips below zero or
+  // overshoots a peak the way a Catmull-Rom spline would.
+  const path = (() => {
+    if (points.length < 2) return `M ${x(0)} ${y(points[0].count)}`;
+    const pts = points.map((p, i) => ({ x: x(i), y: y(p.count) }));
+    const slopes = pts.map((_, i) => {
+      if (i === 0 || i === pts.length - 1) return 0;
+      const dl = pts[i].y - pts[i - 1].y, dr = pts[i + 1].y - pts[i].y;
+      return dl * dr <= 0 ? 0 : (dl + dr) / 2;      // flatten at local extremes
+    });
+    let d = `M ${pts[0].x} ${pts[0].y}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const dx = (pts[i + 1].x - pts[i].x) / 3;
+      d += ` C ${pts[i].x + dx} ${pts[i].y + slopes[i] / 3}, ${pts[i + 1].x - dx} ${pts[i + 1].y - slopes[i + 1] / 3}, ${pts[i + 1].x} ${pts[i + 1].y}`;
+    }
+    return d;
+  })();
+
+  const area = `${path} L ${x(points.length - 1)} ${H - PAD_B} L ${x(0)} ${H - PAD_B} Z`;
+  const peakIdx = points.reduce((b, p, i) => (p.count > points[b].count ? i : b), 0);
+  const active = hover ?? null;
 
   return (
-    <div>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: "100%", height: 90, display: "block" }}>
-        <path d={path} fill="none" stroke="var(--accent)" strokeWidth={2}
-              vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+    <div style={{ position: "relative" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
+        style={{ width: "100%", height: 150, display: "block", overflow: "visible" }}
+        onMouseLeave={() => setHover(null)}
+        onMouseMove={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          const rel = ((e.clientX - r.left) / r.width) * W;
+          // Snap to the nearest point rather than interpolating — the reading should match a real
+          // bucket, not a position between two.
+          let best = 0, bestD = Infinity;
+          points.forEach((_, i) => { const d = Math.abs(x(i) - rel); if (d < bestD) { bestD = d; best = i; } });
+          setHover(best);
+        }}>
+        <defs>
+          <linearGradient id="volFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {/* Baseline so an all-zero stretch still reads as "zero", not "no chart". */}
+        <line x1="0" y1={H - PAD_B} x2={W} y2={H - PAD_B} stroke="var(--line)" strokeWidth={1}
+          vectorEffect="non-scaling-stroke" />
+
+        <path d={area} fill="url(#volFill)" />
+        <path d={path} fill="none" stroke="var(--accent)" strokeWidth={2.5}
+          vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+
+        {active !== null && (
+          <>
+            <line x1={x(active)} y1={PAD_T - 6} x2={x(active)} y2={H - PAD_B}
+              stroke="var(--accent)" strokeWidth={1} strokeDasharray="3 3"
+              vectorEffect="non-scaling-stroke" opacity={0.5} />
+            <circle cx={x(active)} cy={y(points[active].count)} r={4.5}
+              fill="var(--surface)" stroke="var(--accent)" strokeWidth={2.5}
+              vectorEffect="non-scaling-stroke" />
+          </>
+        )}
+        {active === null && points[peakIdx].count > 0 && (
+          <circle cx={x(peakIdx)} cy={y(points[peakIdx].count)} r={3.5} fill="var(--accent)" />
+        )}
       </svg>
-      <div className="hint" style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-        <span>{points[0]?.label}</span>
-        <span>peak {max}</span>
-        <span>{points[points.length - 1]?.label}</span>
+
+      {/* Tooltip in HTML, not SVG: preserveAspectRatio="none" would stretch SVG text. */}
+      {active !== null && (
+        <div style={{
+          position: "absolute", top: -4, pointerEvents: "none",
+          left: `${(x(active) / W) * 100}%`,
+          transform: `translateX(${x(active) > W * 0.75 ? "-100%" : x(active) < W * 0.25 ? "0" : "-50%"})`,
+          background: "var(--ink)", color: "#fff", padding: "6px 10px", borderRadius: 6,
+          fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap",
+          boxShadow: "0 2px 8px rgba(0,0,0,.18)",
+        }}>
+          {fmtBucket(points[active].label, hourly)} · {points[active].count} call{points[active].count === 1 ? "" : "s"}
+        </div>
+      )}
+
+      <div className="hint" style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
+        <span>{fmtBucket(points[0]?.label, hourly)}</span>
+        <span>{fmtBucket(points[points.length - 1]?.label, hourly)}</span>
       </div>
     </div>
   );
+}
+
+/** "08-13" -> "Aug 13", "14" -> "2 PM". Raw bucket keys aren't readable on an axis. */
+function fmtBucket(label: string | undefined, hourly: boolean): string {
+  if (!label) return "";
+  if (hourly) {
+    const h = parseInt(label, 10);
+    if (isNaN(h)) return label;
+    return h === 0 ? "12 AM" : h === 12 ? "12 PM" : h < 12 ? `${h} AM` : `${h - 12} PM`;
+  }
+  if (/^\d{4}-\d{2}$/.test(label)) {                     // ytd/all months
+    const [yr, mo] = label.split("-").map(Number);
+    return new Date(yr, mo - 1, 1).toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  }
+  const [mo, d] = label.split("-").map(Number);
+  if (!mo || !d) return label;
+  return new Date(new Date().getFullYear(), mo - 1, d)
+    .toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 const fmtDur = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`);
