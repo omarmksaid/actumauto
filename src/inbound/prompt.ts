@@ -40,7 +40,8 @@ function guardrails(ctx: InboundContext, bookingMode: BookingMode): string {
   const bookingRule =
     bookingMode === "soft"
       ? `Never claim a firm booking. Use book_service to capture their preferred time, then say ` +
-        `the team will text to confirm. Name the vehicle before booking so they can correct you.`
+        `the team will text to confirm. Name the vehicle before booking so they can correct you, ` +
+        `and always ask whether they'll wait at the dealership or drop the car off.`
       : `Reserve a real slot with book_service before confirming a time. Only state a time it ` +
         `confirmed back to you.`;
 
@@ -75,6 +76,8 @@ const CLOSING_RULES = [
   "- When their reason is resolved, ask once if there's anything else; if not, close in one line",
   "  and END THE CALL. After you say goodbye you are done — never reopen with another question.",
   "- Do NOT end the call while transferring; the transfer tool handles that.",
+  "- To change or cancel a visit: list_appointments, read back which one, confirm they're sure,",
+  "  then cancel_appointment. Offer to rebook rather than just ending it.",
 ].join("\n");
 
 /** Privacy rule for a caller we could NOT identify. Dynamic — kept out of the cache prefix. */
@@ -88,8 +91,8 @@ const PRIVACY_RULE_ANON = [
   "  details you can't act on wastes their time and sounds like a booking that isn't happening.",
   "- If they ask what their car is due for, DON'T just transfer. Ask what they drive (make,",
   "  model, year) and either the current mileage or roughly how long since the last service,",
-  "  then call check_service_due. Say clearly it's an estimate from what they described, not a",
-  "  lookup of their record. If they can't supply enough, then transfer.",
+  "  then call check_service_due, tell them what's due, and offer to book them in. If they can't",
+  "  supply enough detail, transfer instead of guessing.",
   "- Anything else needing their account or history: transfer them.",
 ].join("\n");
 

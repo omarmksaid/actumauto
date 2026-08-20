@@ -126,6 +126,8 @@ async function runTool(name: string, args: any, pinned: PinnedCall): Promise<str
     case "get_due_service":   return await getDueService(pinned);
     case "check_service_due":  return await checkServiceDue(args, pinned);
     case "book_service":      return await bookService(args, pinned);
+    case "list_appointments":  return await listAppointments(pinned);
+    case "cancel_appointment": return await cancelAppointment(args, pinned);
     case "log_handoff":         return await logHandoff(args, pinned);
     // Older name kept so a call already in flight during a deploy doesn't break.
     case "transfer_to_service": return await logHandoff(args, pinned);
@@ -381,10 +383,10 @@ async function checkServiceDue(args: any, pinned: PinnedCall): Promise<string> {
     return "Not enough detail to say what's due. Offer to have an advisor look it up properly.";
   }
 
-  return `Based on what they told you, their ${year} ${make} ${model} is due for ` +
-    `${due.interval.service_name} around ${due.dueOn}` +
+  return `Their ${year} ${make} ${model} is due for ${due.interval.service_name} around ` +
+    `${due.dueOn}` +
     (due.reason === "mileage" ? ` (~${due.projectedMileage.toLocaleString()} mi)` : " (time-based)") +
-    `. Say this is an estimate from what they described, not a lookup of their record.`;
+    `. Tell them what's due, then ask if they'd like you to book them in.`;
 }
 
 async function bookService(args: any, pinned: PinnedCall): Promise<string> {
@@ -418,11 +420,81 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
     vehicleId,
     preferredTime,
     serviceOps: Array.isArray(args.service_ops) ? args.service_ops.map(String) : [],
+    dropOff: ["waiting", "dropping_off"].includes(args.drop_off) ? args.drop_off : "unknown",
     notes: [String(args.notes ?? "").trim(), "(booked on inbound call)"].filter(Boolean).join(" "),
   });
 
   // Mode-gated wording: in soft mode this promises a confirmation, never a firm slot (§2).
   return result.confirmationText;
+}
+
+/** The caller's upcoming visits, so they can ask about, change, or cancel one. */
+async function listAppointments(pinned: PinnedCall): Promise<string> {
+  if (!pinned.customerId) return ANON_REFUSAL;
+
+  const { data } = await supabaseAdmin
+    .from("appointments")
+    .select("id, preferred_time, starts_at, status, service_ops, drop_off, vehicle_id, vehicles(year, make, model)")
+    .eq("customer_id", pinned.customerId)
+    .in("status", ["pending_confirmation", "confirmed"])
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  if (!data?.length) return "They have no upcoming appointments on file.";
+
+  return data.map((a: any) => {
+    const car = a.vehicles ? `${a.vehicles.year} ${a.vehicles.make} ${a.vehicles.model}` : "vehicle not specified";
+    const when = a.starts_at ? new Date(a.starts_at).toLocaleString() : (a.preferred_time ?? "time not set");
+    const ops = (a.service_ops?.ops ?? []).join(", ");
+    return `- id=${a.id} · ${when} · ${car}${ops ? ` · ${ops}` : ""}` +
+      `${a.status === "pending_confirmation" ? " (awaiting confirmation)" : ""}`;
+  }).join("\n");
+}
+
+/**
+ * Cancel one of the caller's appointments.
+ *
+ * appointment_id is accepted from the model, so it is validated against THIS caller — otherwise a
+ * hallucinated or guessed id could cancel a stranger's visit.
+ */
+async function cancelAppointment(args: any, pinned: PinnedCall): Promise<string> {
+  if (!pinned.customerId) return ANON_REFUSAL;
+
+  const id = String(args.appointment_id ?? "").trim();
+  if (!id) return "Call list_appointments first, then cancel by id.";
+
+  const { data: appt } = await supabaseAdmin
+    .from("appointments")
+    .select("id, customer_id, status, preferred_time, starts_at")
+    .eq("id", id).eq("customer_id", pinned.customerId).maybeSingle();
+
+  if (!appt) return "That appointment isn't on this caller's account — read back what you found " +
+    "from list_appointments and ask which one they mean.";
+  if (appt.status === "canceled") return "That one is already canceled.";
+
+  const { error } = await supabaseAdmin.from("appointments").update({
+    status: "canceled",
+    canceled_at: new Date().toISOString(),
+    cancel_reason: args.reason ? String(args.reason).slice(0, 300) : "canceled by caller",
+  }).eq("id", id).eq("customer_id", pinned.customerId);
+  if (error) return "Couldn't cancel that — offer to transfer them to the service team.";
+
+  // The advisor queue is how a soft-booked appointment gets placed in myKaarma; a cancellation
+  // has to reach the same people, or they'd hold a slot the customer no longer wants.
+  await supabaseAdmin.from("handoff_requests").insert({
+    company_id: pinned.companyId,
+    call_id: pinned.callId,
+    customer_id: pinned.customerId,
+    caller_number: pinned.callerNumber,
+    reason: "other",
+    notes: `CANCELED: appointment ${appt.preferred_time ?? appt.starts_at ?? ""}`.trim(),
+    transferred: true,
+    status: "open",
+  });
+
+  const when = appt.starts_at ? new Date(appt.starts_at).toLocaleString() : appt.preferred_time;
+  return `Canceled${when ? ` the ${when} appointment` : ""}. Confirm it's canceled and ask if ` +
+    `they'd like to rebook for another time.`;
 }
 
 /**

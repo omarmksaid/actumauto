@@ -22,6 +22,8 @@ export interface CreateAppointmentInput {
   vehicleId: string | null;
   preferredTime: string;    // free-text or ISO the customer stated
   serviceOps: string[];
+  /** Whether they're staying on site. Decides how the shop schedules the work. */
+  dropOff?: "waiting" | "dropping_off" | "unknown";
   notes: string;            // includes the AA:<appointment_id> tag for the shown-RO loop (§6b)
 }
 

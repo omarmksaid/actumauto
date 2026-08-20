@@ -28,6 +28,7 @@ export const softBooking: BookingProvider = {
       provider: "soft",
       preferred_time: input.preferredTime,
       service_ops: { ops: input.serviceOps },
+      drop_off: input.dropOff ?? "unknown",
       notes: input.notes,
       status: "pending_confirmation",
     }).select("id").single();

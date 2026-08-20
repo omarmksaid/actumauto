@@ -145,6 +145,35 @@ function toolDefinitions(ctx: InboundContext) {
       {
         type: "function",
         function: {
+          name: "list_appointments",
+          description:
+            "The caller's upcoming appointments. Use when they ask about, want to change, or want " +
+            "to cancel a visit.",
+          parameters: { type: "object", properties: {} },
+        },
+        server,
+      },
+      {
+        type: "function",
+        function: {
+          name: "cancel_appointment",
+          description:
+            "Cancel one of the caller's upcoming appointments. Confirm which one and that they're " +
+            "sure before calling this.",
+          parameters: {
+            type: "object",
+            properties: {
+              appointment_id: { type: "string", description: "id from list_appointments." },
+              reason: { type: "string", description: "Why, in their words. Optional." },
+            },
+            required: ["appointment_id"],
+          },
+        },
+        server,
+      },
+      {
+        type: "function",
+        function: {
           name: "book_service",
           description:
             "Capture an appointment request. Use the wording this tool returns back.",
@@ -154,6 +183,11 @@ function toolDefinitions(ctx: InboundContext) {
               preferred_time: { type: "string", description: "Day/time they asked for, their words." },
               vehicle_id: { type: "string", description: "id from get_my_vehicles. Omit if one vehicle." },
               service_ops: { type: "array", items: { type: "string" }, description: "What they're coming in for." },
+              drop_off: {
+                type: "string",
+                enum: ["waiting", "dropping_off"],
+                description: "Ask whether they'll wait at the dealership or drop the car off.",
+              },
               notes: { type: "string", description: "Anything the advisor should know." },
             },
             required: ["preferred_time"],
