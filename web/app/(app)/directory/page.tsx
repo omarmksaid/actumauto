@@ -10,7 +10,6 @@ export default function DirectoryPage() {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [results, setResults] = useState<any[]>([]);
-  const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,7 +18,7 @@ export default function DirectoryPage() {
   useEffect(() => {
     let cancelled = false;
     const t = setTimeout(async () => {
-      setLoading(true); setError(null); setSearched(!!q.trim());
+      setLoading(true); setError(null);
       try {
         if (isDemo) {
           const ql = q.trim().toLowerCase();
@@ -56,8 +55,7 @@ export default function DirectoryPage() {
 
       {error && <div className="banner banner-error">{error}</div>}
 
-      {searched && (
-        <div className="card">
+      <div className="card">
           <table>
             <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Type</th><th>Vehicles</th></tr></thead>
             <tbody>
@@ -76,9 +74,8 @@ export default function DirectoryPage() {
                 </td></tr>
               )}
             </tbody>
-          </table>
-        </div>
-      )}
+        </table>
+      </div>
     </div>
   );
 }
