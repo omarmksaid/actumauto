@@ -4,5 +4,6 @@ node_modules/
 web/.env.local
 .next/
 web/.next/
+web/.next-check/
 *.tsbuildinfo
 .DS_Store
