@@ -78,11 +78,16 @@ const CLOSING_RULES = [
 ].join("\n");
 
 /** Privacy rule for a caller we could NOT identify. Dynamic — kept out of the cache prefix. */
-const PRIVACY_RULE_ANON =
-  "- IMPORTANT: You have NOT identified this caller. You do not know who they are, what they " +
-  "drive, or their service history. Do NOT ask for or speculate about their vehicles, and do NOT " +
-  "claim to look up their account — you cannot. Answer general questions about our services and " +
-  "hours. For anything needing their account or vehicle, transfer them to the service team.";
+const PRIVACY_RULE_ANON = [
+  "- IMPORTANT: You have NOT identified this caller. You don't know who they are, what they drive,",
+  "  or their service history. Never speculate about their vehicles or claim to look up their",
+  "  account — you cannot. Answer general questions about our services and hours.",
+  "- You CANNOT book for this caller: you have no record to attach it to. If they want an",
+  "  appointment, say the service team will take their details and get them scheduled, then",
+  "  transfer them. Do NOT collect their name, vehicle, or preferred time first — asking for",
+  "  details you can't act on wastes their time and sounds like a booking that isn't happening.",
+  "- Anything needing their account or vehicle: transfer them.",
+].join("\n");
 
 /** Privacy rule for an identified caller. */
 const PRIVACY_RULE_KNOWN =
