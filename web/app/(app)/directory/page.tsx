@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiCall } from "@/lib/api";
 import { isDemo } from "@/lib/supabase";
@@ -14,22 +14,30 @@ export default function DirectoryPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function search(e: React.FormEvent) {
-    e.preventDefault();
-    if (!q.trim()) return;
-    setLoading(true); setError(null); setSearched(true);
-    try {
-      if (isDemo) {
-        const ql = q.toLowerCase();
-        setResults(demoDirectory.filter((r) =>
-          r.full_name.toLowerCase().includes(ql) || (r.phone ?? "").includes(q) || (r.email ?? "").includes(ql)));
-      } else {
-        const { results } = await apiCall<{ results: any[] }>(`/agent/directory?q=${encodeURIComponent(q)}`);
-        setResults(results);
-      }
-    } catch (e: any) { setError(e.message); }
-    finally { setLoading(false); }
-  }
+  // Load on mount and re-run as the query changes: an empty box lists everyone alphabetically,
+  // so the page is useful before you know who you're looking for.
+  useEffect(() => {
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      setLoading(true); setError(null); setSearched(!!q.trim());
+      try {
+        if (isDemo) {
+          const ql = q.trim().toLowerCase();
+          const rows = ql
+            ? demoDirectory.filter((r) => r.full_name.toLowerCase().includes(ql) ||
+                (r.phone ?? "").includes(q) || (r.email ?? "").includes(ql))
+            : [...demoDirectory].sort((a, b) => a.full_name.localeCompare(b.full_name));
+          if (!cancelled) setResults(rows);
+        } else {
+          const { results } = await apiCall<{ results: any[] }>(
+            `/agent/directory${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ""}`);
+          if (!cancelled) setResults(results);
+        }
+      } catch (e: any) { if (!cancelled) setError(e.message); }
+      finally { if (!cancelled) setLoading(false); }
+    }, q ? 250 : 0);                       // debounce typing, but load immediately on mount
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [q]);
 
   return (
     <div>
@@ -37,10 +45,14 @@ export default function DirectoryPage() {
       <p className="page-sub">Look up any customer by phone, name, or VIN.</p>
       {isDemo && <div className="banner banner-warn" style={{ marginBottom: 16 }}>Demo data — try &quot;Maria&quot; or a phone number.</div>}
 
-      <form onSubmit={search} style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-        <input style={{ flex: 1 }} placeholder="Phone, name, or VIN…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <button className="btn btn-primary" disabled={loading}>{loading ? "Searching…" : "Search"}</button>
-      </form>
+      <div className="row-between" style={{ marginBottom: 16, gap: 10 }}>
+        <input style={{ flex: 1, maxWidth: 420 }} placeholder="Phone, name, or VIN…"
+          value={q} onChange={(e) => setQ(e.target.value)} />
+        <span className="hint">
+          {loading ? "Loading…" : `${results.length} customer${results.length === 1 ? "" : "s"}`}
+          {!q && results.length >= 200 && " (first 200)"}
+        </span>
+      </div>
 
       {error && <div className="banner banner-error">{error}</div>}
 
@@ -58,7 +70,11 @@ export default function DirectoryPage() {
                   <td className="hint">{r.vehicle_count}</td>
                 </tr>
               ))}
-              {results.length === 0 && <tr><td colSpan={5} className="muted">No matches.</td></tr>}
+              {results.length === 0 && !loading && (
+                <tr><td colSpan={5} className="muted">
+                  {q ? "No matches." : "No customers yet — import a CSV to get started."}
+                </td></tr>
+              )}
             </tbody>
           </table>
         </div>

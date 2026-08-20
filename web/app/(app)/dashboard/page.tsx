@@ -117,8 +117,7 @@ export default function Dashboard() {
 
       <div className="grid-4" style={{ marginTop: 16 }}>
         <Stat n={i.calls} label="Calls" />
-        <Stat n={i.avg_duration_sec ? fmtDur(i.avg_duration_sec) : "—"} label="Avg call length" sub="target <90s"
-              warn={i.avg_duration_sec > 90} />
+        <Stat n={i.avg_duration_sec ? fmtDur(i.avg_duration_sec) : "—"} label="Avg call length" />
         <Stat n={h.failed_transfers} label="Failed transfers" warn={h.failed_transfers > 0} />
         <Stat n={`$${(i.cost_per_call ?? 0).toFixed(2)}`} label="Cost per call" sub={`$${(i.cost_usd ?? 0).toFixed(2)} total`} />
       </div>

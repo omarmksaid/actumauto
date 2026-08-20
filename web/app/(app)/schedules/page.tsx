@@ -178,29 +178,36 @@ function ServiceCatalog({ services, setServices, canEdit }:
   const editor = (
     <tr>
       <td colSpan={5} style={{ background: "var(--bg)" }}>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <label style={{ flex: "1 1 170px" }}>
+        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr", alignItems: "start" }}>
+          <label style={{ gridColumn: "1 / -1" }}>
             <div className="hint" style={{ marginBottom: 4 }}>Service name</div>
             <input value={draft?.name ?? ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-              placeholder="Brake pad replacement" autoFocus />
+              placeholder="Brake pad replacement" autoFocus style={{ width: "100%" }} />
           </label>
-          <label style={{ flex: "2 1 240px" }}>
-            <div className="hint" style={{ marginBottom: 4 }}>What it involves</div>
-            <input value={draft?.description ?? ""} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
+          <label style={{ gridColumn: "1 / -1" }}>
+            <div className="hint" style={{ marginBottom: 4 }}>
+              What it involves <span style={{ fontWeight: 400 }}>— the agent reads this aloud</span>
+            </div>
+            <textarea rows={2} value={draft?.description ?? ""} style={{ width: "100%", resize: "vertical" }}
+              placeholder="Front or rear brake pad replacement with rotor inspection."
+              onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
           </label>
-          <label style={{ flex: "0 1 130px" }}>
+          <label>
             <div className="hint" style={{ marginBottom: 4 }}>Category</div>
-            <select value={draft?.category ?? "maintenance"} onChange={(e) => setDraft({ ...draft, category: e.target.value })}>
+            <select value={draft?.category ?? "maintenance"} style={{ width: "100%" }}
+              onChange={(e) => setDraft({ ...draft, category: e.target.value })}>
               {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </label>
-          <label style={{ flex: "0 1 100px" }}>
-            <div className="hint" style={{ marginBottom: 4 }}>Minutes</div>
-            <input type="number" value={draft?.typical_duration_min ?? ""}
+          <label>
+            <div className="hint" style={{ marginBottom: 4 }}>Typical duration (minutes)</div>
+            <input type="number" value={draft?.typical_duration_min ?? ""} placeholder="45"
               onChange={(e) => setDraft({ ...draft, typical_duration_min: e.target.value })} />
           </label>
-          <button className="btn btn-primary" onClick={save}>Save</button>
-          <button className="btn btn-quiet" onClick={() => { setEditing(null); setAdding(false); }}>Cancel</button>
+          <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8 }}>
+            <button className="btn btn-primary" onClick={save}>Save</button>
+            <button className="btn btn-quiet" onClick={() => { setEditing(null); setAdding(false); }}>Cancel</button>
+          </div>
         </div>
         {err && <div className="hint" style={{ color: "var(--hot)", marginTop: 8 }}>{err}</div>}
       </td>

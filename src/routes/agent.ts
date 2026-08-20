@@ -329,7 +329,26 @@ agentRoutes.get("/calls/:id", async (c) => {
 agentRoutes.get("/directory", async (c) => {
   const companyId = cid(c);
   const q = (c.req.query("q") ?? "").trim();
-  if (!q) return c.json({ results: [] });
+
+  // An empty search used to return nothing, so the directory looked empty until you guessed a
+  // name. Default to listing everyone alphabetically — browsing is the common case.
+  if (!q) {
+    const { data, error } = await supabaseAdmin
+      .from("customers")
+      .select("id, full_name, phone, email, customer_type, vehicles(id)")
+      .eq("company_id", companyId)
+      .order("full_name", { ascending: true })
+      .limit(200);
+    if (error) return c.json({ error: error.message }, 500);
+    return c.json({
+      results: (data ?? []).map((r: any) => ({
+        customer_id: r.id, full_name: r.full_name, phone: r.phone, email: r.email,
+        customer_type: r.customer_type, vehicle_count: (r.vehicles ?? []).length,
+      })),
+      total: data?.length ?? 0,
+    });
+  }
+
   const { data, error } = await supabaseAdmin.rpc("search_customers", { p_company_id: companyId, p_query: q });
   if (error) return c.json({ error: error.message }, 500);
   return c.json({ results: data ?? [] });
