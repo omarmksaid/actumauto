@@ -63,11 +63,14 @@ export interface CallRow {
   from_number?: string | null;
   customers: { full_name: string; phone: string | null } | null;
 }
-export const demoCalls: CallRow[] = [
-  { id: "c4", vapi_call_id: "v4", from_number: "+14085550142", duration_sec: 214, outcome: "booked", cost_usd: 0.41, created_at: "2026-08-17T15:42:00Z", customers: { full_name: "Maria Chen", phone: "+14085550142" } },
-  { id: "c5", vapi_call_id: "v5", from_number: "+14085550177", duration_sec: 96, outcome: "answered", cost_usd: 0.19, created_at: "2026-08-17T15:20:00Z", customers: null },
-  { id: "c6", vapi_call_id: "v6", from_number: "+14085550199", duration_sec: 61, outcome: "answered", cost_usd: 0.12, created_at: "2026-08-17T14:05:00Z", customers: { full_name: "Devon Park", phone: "+14085550199" } },
+export const demoCalls: any[] = [
+  { id: "c1", name: "Omar Said", phone: "+16283587659", status: "answered", detail: null, duration_sec: 5, cost_usd: 0.01, has_recording: true, attempts: 1, created_at: new Date(Date.now() - 3600_000).toISOString() },
+  { id: "c2", name: "Omar Said", phone: "+16283587659", status: "missed", detail: "hung up <2s", duration_sec: 0, cost_usd: null, has_recording: false, attempts: 4, attempt_span_min: 3, created_at: new Date(Date.now() - 7200_000).toISOString() },
+  { id: "c3", name: "Omar Said", phone: "+16283587659", status: "handed off", detail: "pricing", duration_sec: 53, cost_usd: 0.06, has_recording: true, attempts: 1, created_at: new Date(Date.now() - 10800_000).toISOString() },
+  { id: "c4", name: null, phone: "+14155551234", status: "missed", detail: "no connect", duration_sec: 0, cost_usd: null, has_recording: false, attempts: 1, created_at: new Date(Date.now() - 90000_000).toISOString() },
+  { id: "c5", name: "Devon Park", phone: "+14085550199", status: "booked", detail: null, duration_sec: 132, cost_usd: 0.14, has_recording: true, attempts: 1, created_at: new Date(Date.now() - 95000_000).toISOString() },
 ];
+
 
 
 export const demoCallDetail = {

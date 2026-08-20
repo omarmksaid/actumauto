@@ -20,11 +20,36 @@ agentRoutes.get("/funnel", async (c) => {
   const companyId = cid(c);
   const range = (c.req.query("range") ?? "1d").toLowerCase();
 
+  // Everything below is bucketed in the DEALERSHIP's timezone, not the server's. Railway runs
+  // UTC, so server-local hours would file a 7pm Pacific call under 02:00 the NEXT day — the
+  // chart silently shows the wrong hours, and "today" starts at 5pm.
+  const { data: company } = await supabaseAdmin
+    .from("companies").select("timezone").eq("id", companyId).maybeSingle();
+  const tz = company?.timezone || "America/Los_Angeles";
+
+  /** Local wall-clock parts of an instant, in the dealership's timezone. */
+  const parts = (d: Date) => {
+    const f = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false,
+    }).formatToParts(d).reduce((a: any, p) => (a[p.type] = p.value, a), {});
+    return { date: `${f.year}-${f.month}-${f.day}`, hour: f.hour === "24" ? "00" : f.hour };
+  };
+
   const now = new Date();
   const DAY = 86400_000;
   // "1d" means today so far, not a rolling 24h — a service manager reads it as "today".
+  // Midnight *in the dealership's timezone*, expressed as an instant.
+  const localMidnight = () => {
+    const today = parts(now).date;
+    for (let guess = 0; guess < 48; guess++) {
+      const t = new Date(now.getTime() - guess * 3600_000);
+      if (parts(t).date !== today) return new Date(t.getTime() + 3600_000);
+    }
+    return new Date(now.getTime() - 24 * 3600_000);
+  };
+
   const since =
-    range === "1d" ? new Date(new Date().toDateString())
+    range === "1d" ? localMidnight()
     : range === "1w" ? new Date(now.getTime() - 7 * DAY)
     : range === "1m" ? new Date(now.getTime() - 30 * DAY)
     : range === "ytd" ? new Date(now.getFullYear(), 0, 1)
@@ -54,20 +79,20 @@ agentRoutes.get("/funnel", async (c) => {
   else if (range === "1w" || range === "1m") {
     const days = range === "1w" ? 7 : 30;
     for (let i = days - 1; i >= 0; i--) {
-      buckets.set(new Date(now.getTime() - i * DAY).toISOString().slice(5, 10), 0);
+      buckets.set(parts(new Date(now.getTime() - i * DAY)).date.slice(5), 0);
     }
   } else {
     // ytd / all: bucket by MONTH. A daily axis over a year is unreadable, and pre-seeding every
     // day since epoch for "all" would be absurd — so months are derived from the data itself.
     const months = new Set<string>();
-    for (const x of c_) months.add(String(x.created_at).slice(0, 7));
+    for (const x of c_) months.add(parts(new Date(x.created_at as string)).date.slice(0, 7));
     [...months].sort().forEach((m) => buckets.set(m, 0));
   }
   for (const x of c_) {
-    const d = new Date(x.created_at as string);
-    const key = byHour ? String(d.getHours()).padStart(2, "0")
-      : (range === "ytd" || range === "all") ? d.toISOString().slice(0, 7)
-      : d.toISOString().slice(5, 10);
+    const p = parts(new Date(x.created_at as string));
+    const key = byHour ? p.hour
+      : (range === "ytd" || range === "all") ? p.date.slice(0, 7)
+      : p.date.slice(5);
     if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + 1);
   }
 
@@ -120,14 +145,99 @@ agentRoutes.get("/funnel", async (c) => {
 });
 
 // ── Calls list ───────────────────────────────────────────────────────────────
+// Returns everything the calls view renders: who called, what happened, and — for calls that
+// never connected — a reason derived from Vapi's endedReason, plus repeat-attempt grouping.
 agentRoutes.get("/calls", async (c) => {
   const companyId = cid(c);
-  const { data } = await supabaseAdmin
+  const q = (c.req.query("q") ?? "").trim();
+
+  let query = supabaseAdmin
     .from("calls")
-    .select("id, customer_id, vapi_call_id, from_number, duration_sec, outcome, cost_usd, created_at, customers(full_name, phone)")
-    .eq("company_id", companyId).eq("direction", "inbound")
-    .order("created_at", { ascending: false }).limit(100);
-  return c.json({ calls: data ?? [] });
+    .select("id, customer_id, vapi_call_id, from_number, duration_sec, outcome, cost_usd, recording_url, metadata, created_at, customers(full_name, phone)")
+    .eq("company_id", companyId).eq("direction", "inbound");
+
+  if (q) {
+    // Search by number (digits only, so formatting doesn't matter) or by customer name.
+    const digits = q.replace(/\D/g, "");
+    const { data: named } = await supabaseAdmin
+      .from("customers").select("id").eq("company_id", companyId).ilike("full_name", `%${q}%`);
+    const ids = (named ?? []).map((x) => x.id);
+    const clauses = [digits.length >= 3 ? `from_number.ilike.%${digits}%` : null,
+                     ids.length ? `customer_id.in.(${ids.join(",")})` : null].filter(Boolean);
+    if (!clauses.length) return c.json({ calls: [] });
+    query = query.or(clauses.join(","));
+  }
+
+  const { data } = await query.order("created_at", { ascending: false }).limit(200);
+  const rows = data ?? [];
+
+  // Handoff reason per call — what makes "handed off · pricing" possible.
+  const ids = rows.map((r) => r.id);
+  const { data: handoffs } = ids.length
+    ? await supabaseAdmin.from("handoff_requests").select("call_id, reason").in("call_id", ids)
+    : { data: [] };
+  const reasonByCall = new Map((handoffs ?? []).map((h) => [h.call_id, h.reason]));
+
+  const calls = rows.map((r) => {
+    const md = (r.metadata ?? {}) as any;
+    const dur = r.duration_sec ?? 0;
+    const ended = String(md.endedReason ?? "");
+    const handoff = reasonByCall.get(r.id) ?? null;
+
+    // A call that never produced audio is "missed". Vapi's endedReason explains WHY, which is the
+    // difference between "the caller hung up" and "our pipeline broke" — worth distinguishing,
+    // because one is a customer behaviour and the other is an outage.
+    let status: string, detail: string | null = null;
+    if (r.outcome === "booked") { status = "booked"; }
+    else if (handoff) { status = "handed off"; detail = handoff; }
+    else if (dur > 0) { status = "answered"; }
+    else {
+      status = "missed";
+      detail = /pipeline-error/.test(ended) ? "call failed"
+        : /customer-did-not-answer|no-answer/.test(ended) ? "no connect"
+        : /customer-ended|hangup/.test(ended) ? "hung up <2s"
+        : ended ? ended.replace(/-/g, " ") : "no connect";
+    }
+
+    return {
+      id: r.id,
+      customer_id: r.customer_id,
+      name: (r.customers as any)?.full_name ?? null,
+      phone: r.from_number ?? (r.customers as any)?.phone ?? null,
+      status, detail,
+      duration_sec: dur,
+      cost_usd: r.cost_usd,
+      has_recording: !!r.recording_url,
+      created_at: r.created_at,
+    };
+  });
+
+  // Collapse repeat attempts: same number, back-to-back misses within 10 minutes read as one
+  // frustrated caller redialing, not four separate events.
+  const collapsed: any[] = [];
+  for (const call of calls) {
+    const prev = collapsed[collapsed.length - 1];
+    const gapMin = prev
+      ? (new Date(prev.created_at).getTime() - new Date(call.created_at).getTime()) / 60_000 : Infinity;
+    if (prev && prev.status === "missed" && call.status === "missed" &&
+        prev.phone === call.phone && gapMin <= 10) {
+      prev.attempts = (prev.attempts ?? 1) + 1;
+      prev.attempt_span_min = Math.max(1, Math.round(
+        (new Date(prev.created_at).getTime() - new Date(call.created_at).getTime()) / 60_000));
+      continue;
+    }
+    collapsed.push({ ...call, attempts: 1 });
+  }
+
+  const counts = {
+    all: collapsed.length,
+    answered: collapsed.filter((x) => x.status === "answered").length,
+    missed: collapsed.filter((x) => x.status === "missed").length,
+    "handed off": collapsed.filter((x) => x.status === "handed off").length,
+    booked: collapsed.filter((x) => x.status === "booked").length,
+  };
+
+  return c.json({ calls: collapsed, counts });
 });
 
 // ── Handoff queue (§16b) — callers the agent sent to a human ─────────────────
