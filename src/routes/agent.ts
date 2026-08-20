@@ -8,6 +8,25 @@
 
 import { Hono } from "hono";
 import { supabaseAdmin } from "../lib/supabase";
+import { env } from "../lib/env";
+
+/**
+ * Ask Vapi for a playable recording URL. The webhook's `recordingUrl` points at private R2 and
+ * returns 400 to a browser; only the presigned variant streams. It expires within hours, which is
+ * why we fetch on demand instead of persisting it.
+ */
+async function vapiPresignedRecording(vapiCallId: string): Promise<string | null> {
+  try {
+    const r = await fetch(`https://api.vapi.ai/call/${vapiCallId}`, {
+      headers: { Authorization: `Bearer ${env.VAPI_API_KEY}` },
+    });
+    if (!r.ok) return null;
+    const a = (await r.json())?.artifact ?? {};
+    return a.presignedMonoUrl ?? a.presignedStereoUrl ?? null;
+  } catch {
+    return null;   // playback is a nice-to-have; never fail the page over it
+  }
+}
 
 export const agentRoutes = new Hono();
 
@@ -279,19 +298,25 @@ agentRoutes.get("/calls/:id", async (c) => {
 
   const { data: call } = await supabaseAdmin
     .from("calls")
-    .select("id, customer_id, recording_url, duration_sec, outcome, cost_usd, created_at, metadata, customers(full_name, phone, email)")
+    .select("id, customer_id, vapi_call_id, recording_url, duration_sec, outcome, cost_usd, created_at, metadata, customers(full_name, phone, email)")
     .eq("id", id).eq("company_id", companyId).maybeSingle();
   if (!call) return c.json({ error: "not found" }, 404);
 
   const { data: turns } = await supabaseAdmin
     .from("transcripts").select("role, content, ts").eq("call_id", id).order("ts", { ascending: true });
 
-  // If the recording lives in our Storage bucket, hand back a short-lived signed URL (§8 invariant 6).
-  let recordingUrl = call.recording_url;
-  if (recordingUrl && recordingUrl.startsWith("recordings/")) {
+  // Recording URL. Vapi stores audio in private R2 — the `recordingUrl` it sends in the webhook
+  // is NOT publicly fetchable (400), so playing it directly fails silently in an <audio> tag.
+  // The playable form is `artifact.presignedMonoUrl`, which expires in hours, so it has to be
+  // fetched fresh per view rather than stored.
+  let recordingUrl: string | null = call.recording_url;
+  if (recordingUrl?.startsWith("recordings/")) {
+    // Ours, in Supabase Storage — short-lived signed URL (§8 invariant 6).
     const { data: signed } = await supabaseAdmin.storage
       .from("recordings").createSignedUrl(recordingUrl.replace(/^recordings\//, ""), 3600);
     recordingUrl = signed?.signedUrl ?? recordingUrl;
+  } else if (recordingUrl && (call as any).vapi_call_id && env.VAPI_API_KEY) {
+    recordingUrl = await vapiPresignedRecording((call as any).vapi_call_id) ?? recordingUrl;
   }
 
   return c.json({ call: { ...call, recording_url: recordingUrl }, transcript: turns ?? [] });
