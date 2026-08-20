@@ -13,6 +13,13 @@ export const agentRoutes = new Hono();
 
 const cid = (c: any) => c.get("companyId") as string;
 
+// ── Who am I ────────────────────────────────────────────────────────────────
+// The frontend needs the role to disable controls an advisor can't use. Server-side checks stay
+// authoritative (requireAdmin); this only prevents showing buttons that would 403.
+agentRoutes.get("/me", async (c) => {
+  return c.json({ role: (c as any).get("role") ?? "advisor", companyId: cid(c) });
+});
+
 // ── Dashboard ───────────────────────────────────────────────────────────────
 // Everything the service-line dashboard shows, for a selectable range: what came in, how much of
 // it we recognized, what we booked, who is still waiting on a person, and what it cost.

@@ -3,12 +3,11 @@
 import { useEffect, useState } from "react";
 import { apiCall } from "@/lib/api";
 import { isDemo } from "@/lib/supabase";
-import { demoSettings, demoNumbers, demoServices, demoInboundSettings, ServiceOffering } from "@/lib/data";
+import { demoSettings, demoNumbers, demoInboundSettings } from "@/lib/data";
 
 export default function SettingsPage() {
   const [s, setS] = useState<any>(isDemo ? { ...demoSettings, inbound: demoInboundSettings } : null);
   const [numbers, setNumbers] = useState<any[]>(isDemo ? demoNumbers : []);
-  const [services, setServices] = useState<ServiceOffering[]>(isDemo ? demoServices : []);
   const [loading, setLoading] = useState(!isDemo);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,9 +17,8 @@ export default function SettingsPage() {
     Promise.all([
       apiCall("/settings"),
       apiCall<{ numbers: any[] }>("/settings/numbers"),
-      apiCall<{ services: ServiceOffering[] }>("/settings/services"),
     ])
-      .then(([settings, n, sv]) => { setS(settings); setNumbers(n.numbers); setServices(sv.services); })
+      .then(([settings, n]) => { setS(settings); setNumbers(n.numbers); })
       .catch((e) => setError(e.message)).finally(() => setLoading(false));
   }, []);
 
@@ -29,9 +27,9 @@ export default function SettingsPage() {
     if (isDemo) { setSaved(true); return; }
     try {
       await apiCall("/settings", { method: "PUT", body: JSON.stringify({
-        voice: s.voice, persona_prompt: s.persona_prompt,
+        persona_prompt: s.persona_prompt,
         customer_types: s.customer_types, inbound: s.inbound,
-        business_hours: s.business_hours, agent_enabled: s.agent_enabled,
+        business_hours: s.business_hours,
       }) });
       setSaved(true);
     } catch (e: any) { setError(e.message); }
@@ -50,19 +48,9 @@ export default function SettingsPage() {
       {isDemo && <div className="banner banner-warn" style={{ marginBottom: 16 }}>Demo data — changes aren&apos;t saved.</div>}
       {error && <div className="banner banner-error" style={{ marginBottom: 16 }}>{error}</div>}
 
-      {/* ── Voice & persona ── */}
+      {/* ── Agent behavior ── */}
       <div className="card card-pad">
-        <div className="section-label">Agent voice</div>
-        <div className="grid-2">
-          <Field label="TTS provider">
-            <select value={s.voice?.provider ?? "cartesia"} onChange={(e) => setS({ ...s, voice: { ...s.voice, provider: e.target.value } })}>
-              <option value="cartesia">Cartesia</option>
-              <option value="deepgram">Deepgram Aura-2</option>
-              <option value="11labs">ElevenLabs</option>
-            </select>
-          </Field>
-          <Field label="Voice ID"><input value={s.voice?.voice_id ?? ""} onChange={(e) => setS({ ...s, voice: { ...s.voice, voice_id: e.target.value } })} /></Field>
-        </div>
+        <div className="section-label">Agent behavior</div>
         <Field label="Default behavior prompt (wraps hardcoded guardrails)">
           <textarea rows={4} value={s.persona_prompt ?? ""} onChange={(e) => setS({ ...s, persona_prompt: e.target.value })} />
         </Field>
@@ -70,31 +58,6 @@ export default function SettingsPage() {
           <input value={(s.customer_types ?? []).join(", ")}
             onChange={(e) => setS({ ...s, customer_types: e.target.value.split(",").map((x: string) => x.trim()).filter(Boolean) })} />
         </Field>
-      </div>
-
-      {/* ── Kill switch ── */}
-      <div className="card card-pad">
-        <div className="row-between">
-          <div>
-            <div className="section-label" style={{ marginBottom: 4 }}>Agent status</div>
-            <p className="hint" style={{ margin: 0 }}>
-              {s.agent_enabled === false
-                ? "OFF — callers hear a short greeting and are transferred to a person. The agent answers nothing."
-                : "ON — the agent is handling calls."}
-            </p>
-          </div>
-          <button
-            className={`btn ${s.agent_enabled === false ? "btn-primary" : ""}`}
-            onClick={() => setS({ ...s, agent_enabled: s.agent_enabled === false })}
-          >
-            {s.agent_enabled === false ? "Turn agent on" : "Turn agent off"}
-          </button>
-        </div>
-        {s.agent_enabled === false && !inb.transfer_number && (
-          <div className="banner banner-warn" style={{ marginTop: 12 }}>
-            No transfer number set — callers will be asked to hold rather than connected to anyone.
-          </div>
-        )}
       </div>
 
       {/* ── Operating hours (§16d) ── */}
@@ -144,125 +107,8 @@ export default function SettingsPage() {
         <button className="btn btn-primary" onClick={save}>Save settings</button>
       </div>
 
-      {/* ── Services catalog (§16c) ── */}
-      <ServicesCatalog services={services} setServices={setServices} />
-
       {/* ── Number pool ── */}
       <NumberPool numbers={numbers} setNumbers={setNumbers} />
-    </div>
-  );
-}
-
-/**
- * The services the dealership owns — the ONLY thing the inbound agent may say we offer (§16c).
- * No price column by design: the agent never quotes cost, it routes pricing questions to an advisor.
- */
-function ServicesCatalog({ services, setServices }: { services: ServiceOffering[]; setServices: (s: ServiceOffering[]) => void }) {
-  const [draft, setDraft] = useState({ name: "", description: "", category: "maintenance", typical_duration_min: "" });
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function add() {
-    if (!draft.name.trim()) return;
-    const body = {
-      name: draft.name.trim(),
-      description: draft.description.trim() || null,
-      category: draft.category || null,
-      typical_duration_min: draft.typical_duration_min ? parseInt(draft.typical_duration_min, 10) : null,
-    };
-    if (isDemo) {
-      setServices([...services, { id: `demo-${Date.now()}`, operations: [], active: true, ...body } as ServiceOffering]);
-      setDraft({ name: "", description: "", category: "maintenance", typical_duration_min: "" });
-      return;
-    }
-    setBusy(true); setErr(null);
-    try {
-      const { service } = await apiCall<{ service: ServiceOffering }>("/settings/services", {
-        method: "POST", body: JSON.stringify(body),
-      });
-      setServices([...services, service]);
-      setDraft({ name: "", description: "", category: "maintenance", typical_duration_min: "" });
-    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
-  }
-
-  async function toggle(sv: ServiceOffering) {
-    if (isDemo) { setServices(services.map((x) => x.id === sv.id ? { ...x, active: !x.active } : x)); return; }
-    const { service } = await apiCall<{ service: ServiceOffering }>(`/settings/services/${sv.id}`, {
-      method: "PATCH", body: JSON.stringify({ active: !sv.active }),
-    });
-    setServices(services.map((x) => x.id === sv.id ? service : x));
-  }
-
-  async function remove(sv: ServiceOffering) {
-    if (isDemo) { setServices(services.filter((x) => x.id !== sv.id)); return; }
-    await apiCall(`/settings/services/${sv.id}`, { method: "DELETE" });
-    setServices(services.filter((x) => x.id !== sv.id));
-  }
-
-  return (
-    <div className="card" style={{ marginBottom: 16 }}>
-      <div className="card-pad" style={{ paddingBottom: 0 }}>
-        <div className="section-label" style={{ marginBottom: 4 }}>Services we offer</div>
-        <p className="hint">
-          The agent answers &ldquo;do you do X?&rdquo; from this list only, and never quotes a
-          price — cost questions go to an advisor.
-        </p>
-      </div>
-      <table>
-        <thead><tr><th>Service</th><th>Category</th><th>Duration</th><th>Status</th><th></th></tr></thead>
-        <tbody>
-          {services.map((sv) => (
-            <tr key={sv.id}>
-              <td>{sv.name}<div className="hint">{sv.description ?? "—"}</div></td>
-              <td className="hint">{sv.category ?? "—"}</td>
-              <td className="hint">{sv.typical_duration_min ? `${sv.typical_duration_min} min` : "—"}</td>
-              <td>
-                <span className={`chip ${sv.active ? "chip-ok" : "chip-muted"}`}>
-                  {sv.active ? "active" : "hidden"}
-                </span>
-              </td>
-              <td style={{ whiteSpace: "nowrap" }}>
-                <button className="btn" onClick={() => toggle(sv)}>{sv.active ? "Hide" : "Show"}</button>{" "}
-                <button className="btn btn-quiet" onClick={() => remove(sv)}>Remove</button>
-              </td>
-            </tr>
-          ))}
-          {services.length === 0 && (
-            <tr><td colSpan={5} className="muted">
-              No services yet — the inbound agent will transfer every service question until you add some.
-            </td></tr>
-          )}
-        </tbody>
-      </table>
-      <div className="card-pad" style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-        <label style={{ flex: "1 1 180px" }}>
-          <div className="hint" style={{ marginBottom: 4 }}>Service name</div>
-          <input placeholder="Brake pad replacement" value={draft.name}
-            onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-        </label>
-        <label style={{ flex: "2 1 240px" }}>
-          <div className="hint" style={{ marginBottom: 4 }}>What it involves</div>
-          <input placeholder="Front or rear pad replacement with rotor inspection."
-            value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
-        </label>
-        <label style={{ flex: "0 1 140px" }}>
-          <div className="hint" style={{ marginBottom: 4 }}>Category</div>
-          <select value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })}>
-            <option value="maintenance">Maintenance</option>
-            <option value="repair">Repair</option>
-            <option value="inspection">Inspection</option>
-            <option value="tires">Tires</option>
-            <option value="other">Other</option>
-          </select>
-        </label>
-        <label style={{ flex: "0 1 110px" }}>
-          <div className="hint" style={{ marginBottom: 4 }}>Minutes</div>
-          <input type="number" placeholder="60" value={draft.typical_duration_min}
-            onChange={(e) => setDraft({ ...draft, typical_duration_min: e.target.value })} />
-        </label>
-        <button className="btn btn-primary" onClick={add} disabled={busy}>Add service</button>
-        {err && <span className="hint" style={{ color: "var(--hot)" }}>{err}</span>}
-      </div>
     </div>
   );
 }

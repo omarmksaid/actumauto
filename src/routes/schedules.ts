@@ -111,6 +111,34 @@ scheduleRoutes.post("/:id/intervals", requireAdmin, async (c) => {
   return c.json({ interval: data });
 });
 
+scheduleRoutes.patch("/:id/intervals/:intervalId", requireAdmin, async (c) => {
+  const companyId = cid(c);
+  const scheduleId = c.req.param("id");
+  if (!(await ownsSchedule(companyId, scheduleId))) return c.json({ error: "not found" }, 404);
+
+  const b = await c.req.json<any>();
+  const patch: any = {};
+  if ("mileage" in b) patch.mileage = b.mileage === null || b.mileage === "" ? null : Number(b.mileage);
+  if ("months" in b) patch.months = b.months === null || b.months === "" ? null : Number(b.months);
+  if (b.service_name?.trim()) patch.service_name = b.service_name.trim();
+  if (Array.isArray(b.operations)) patch.operations = b.operations;
+  if (["standard", "major", "safety"].includes(b.severity)) patch.severity = b.severity;
+
+  // An interval with neither axis can never come due — it would silently do nothing.
+  const mileage = "mileage" in patch ? patch.mileage : undefined;
+  const months = "months" in patch ? patch.months : undefined;
+  if (mileage === null && months === null) {
+    return c.json({ error: "set a mileage, a month interval, or both" }, 422);
+  }
+
+  const { data, error } = await supabaseAdmin.from("service_intervals")
+    .update(patch).eq("id", c.req.param("intervalId")).eq("schedule_id", scheduleId)
+    .select("*").maybeSingle();
+  if (error) return c.json({ error: error.message }, 400);
+  if (!data) return c.json({ error: "not found" }, 404);
+  return c.json({ interval: data });
+});
+
 scheduleRoutes.delete("/:id/intervals/:intervalId", requireAdmin, async (c) => {
   const companyId = cid(c);
   const scheduleId = c.req.param("id");
