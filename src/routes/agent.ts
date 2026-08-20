@@ -86,7 +86,7 @@ agentRoutes.get("/funnel", async (c) => {
 
   const [{ data: calls }, { data: appts }, { data: handoffs }] = await Promise.all([
     supabaseAdmin.from("calls")
-      .select("customer_id, outcome, duration_sec, cost_usd, metadata, created_at")
+      .select("customer_id, outcome, duration_sec, metadata, created_at")
       .eq("company_id", companyId).eq("direction", "inbound")
       .gte("created_at", since.toISOString()),
     supabaseAdmin.from("appointments")
@@ -99,7 +99,6 @@ agentRoutes.get("/funnel", async (c) => {
   const c_ = calls ?? [];
   const identified = c_.filter((x) => !!x.customer_id).length;
   const answered = c_.filter((x) => (x.duration_sec ?? 0) > 0);
-  const totalCost = c_.reduce((s, x) => s + Number(x.cost_usd ?? 0), 0);
 
   // Bucket by hour for a single day, by day for anything longer — a 30-day hourly chart is noise.
   const byHour = range === "1d";
@@ -151,8 +150,6 @@ agentRoutes.get("/funnel", async (c) => {
       // Averaged over ANSWERED calls only — failed connections would drag it to nonsense.
       avg_duration_sec: answered.length
         ? Math.round(answered.reduce((s, x) => s + Number(x.duration_sec ?? 0), 0) / answered.length) : 0,
-      cost_usd: Number(totalCost.toFixed(2)),
-      cost_per_call: c_.length ? Number((totalCost / c_.length).toFixed(3)) : 0,
     },
     volume: [...buckets.entries()].map(([label, count]) => ({ label, count })),
     appointments: {
@@ -182,7 +179,7 @@ agentRoutes.get("/calls", async (c) => {
 
   let query = supabaseAdmin
     .from("calls")
-    .select("id, customer_id, vapi_call_id, from_number, duration_sec, outcome, cost_usd, recording_url, metadata, created_at, customers(full_name, phone)")
+    .select("id, customer_id, vapi_call_id, from_number, duration_sec, outcome, recording_url, metadata, created_at, customers(full_name, phone)")
     .eq("company_id", companyId).eq("direction", "inbound");
 
   if (q) {
@@ -235,7 +232,6 @@ agentRoutes.get("/calls", async (c) => {
       phone: r.from_number ?? (r.customers as any)?.phone ?? null,
       status, detail,
       duration_sec: dur,
-      cost_usd: r.cost_usd,
       has_recording: !!r.recording_url,
       created_at: r.created_at,
     };
@@ -329,7 +325,7 @@ agentRoutes.get("/calls/:id", async (c) => {
 
   const { data: call } = await supabaseAdmin
     .from("calls")
-    .select("id, customer_id, vapi_call_id, recording_url, recording_path, archive_status, duration_sec, outcome, cost_usd, created_at, metadata, customers(full_name, phone, email)")
+    .select("id, customer_id, vapi_call_id, recording_url, recording_path, archive_status, duration_sec, outcome, created_at, metadata, customers(full_name, phone, email)")
     .eq("id", id).eq("company_id", companyId).maybeSingle();
   if (!call) return c.json({ error: "not found" }, 404);
 

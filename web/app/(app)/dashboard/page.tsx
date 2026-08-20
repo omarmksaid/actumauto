@@ -119,7 +119,7 @@ export default function Dashboard() {
         <Stat n={i.calls} label="Calls" />
         <Stat n={i.avg_duration_sec ? fmtDur(i.avg_duration_sec) : "—"} label="Avg call length" />
         <Stat n={h.failed_transfers} label="Failed transfers" warn={h.failed_transfers > 0} />
-        <Stat n={`$${(i.cost_per_call ?? 0).toFixed(2)}`} label="Cost per call" sub={`$${(i.cost_usd ?? 0).toFixed(2)} total`} />
+        <Stat n={i.anonymous ?? 0} label="Unrecognized callers" />
       </div>
 
       <div className="card card-pad" style={{ marginTop: 16 }}>

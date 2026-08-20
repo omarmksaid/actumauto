@@ -27,8 +27,7 @@ export default function SettingsPage() {
     if (isDemo) { setSaved(true); return; }
     try {
       await apiCall("/settings", { method: "PUT", body: JSON.stringify({
-        persona_prompt: s.persona_prompt,
-        customer_types: s.customer_types, inbound: s.inbound,
+        inbound: s.inbound,
         business_hours: s.business_hours,
       }) });
       setSaved(true);
@@ -47,21 +46,6 @@ export default function SettingsPage() {
       <p className="page-sub">How the agent answers your service line, what it can offer, and which numbers route to it.</p>
       {isDemo && <div className="banner banner-warn" style={{ marginBottom: 16 }}>Demo data — changes aren&apos;t saved.</div>}
       {error && <div className="banner banner-error" style={{ marginBottom: 16 }}>{error}</div>}
-
-      {/* ── Agent behavior ── */}
-      <div className="card card-pad">
-        <div className="section-label">Agent behavior</div>
-        <Field label="Default behavior prompt (wraps hardcoded guardrails)">
-          <textarea rows={4} value={s.persona_prompt ?? ""} onChange={(e) => setS({ ...s, persona_prompt: e.target.value })} />
-        </Field>
-        <Field label="Customer types (comma-separated)">
-          <input value={(s.customer_types ?? []).join(", ")}
-            onChange={(e) => setS({ ...s, customer_types: e.target.value.split(",").map((x: string) => x.trim()).filter(Boolean) })} />
-        </Field>
-      </div>
-
-      {/* ── Operating hours (§16d) ── */}
-      <BusinessHours hours={s.business_hours ?? {}} onChange={(h) => setS({ ...s, business_hours: h })} />
 
       {/* ── Inbound service line (§16) ── */}
       <div className="card card-pad">
@@ -95,10 +79,6 @@ export default function SettingsPage() {
         )}
         <Field label="Greeting (optional — leave blank for the default)">
           <input value={inb.greeting ?? ""} onChange={(e) => setInb({ greeting: e.target.value })} />
-        </Field>
-        <Field label="Inbound behavior prompt (wraps hardcoded guardrails)">
-          <textarea rows={3} value={inb.persona_prompt ?? ""}
-            onChange={(e) => setInb({ persona_prompt: e.target.value })} />
         </Field>
       </div>
 

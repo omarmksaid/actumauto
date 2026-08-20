@@ -104,9 +104,6 @@ export default function CallsPage() {
                   <span className="hint" style={{ minWidth: 46, textAlign: "right" }}>
                     {call.duration_sec ? fmtDur(call.duration_sec) : "—"}
                   </span>
-                  <span className="hint" style={{ minWidth: 52, textAlign: "right" }}>
-                    {call.cost_usd ? `$${Number(call.cost_usd).toFixed(2)}` : "—"}
-                  </span>
                   <span className="hint" style={{ minWidth: 68, textAlign: "right" }}>{fmtTime(call.created_at)}</span>
                   <span aria-hidden style={{ color: "var(--muted)", fontSize: 13 }}>
                     {call.has_recording ? "▶" : "›"}

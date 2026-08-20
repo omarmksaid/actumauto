@@ -31,7 +31,7 @@ export default function CallDetailPage() {
       <h1 className="page-title" style={{ marginTop: 8 }}>{call.customers?.full_name ?? "Call"}</h1>
       <p className="page-sub">
         {call.outcome?.replace(/_/g, " ")} · {new Date(call.created_at).toLocaleString()}
-        {call.cost_usd != null && ` · $${call.cost_usd.toFixed(2)}`}
+        {call.duration_sec ? ` · ${Math.floor(call.duration_sec / 60)}m ${call.duration_sec % 60}s` : ""}
       </p>
       {isDemo && <div className="banner banner-warn" style={{ marginBottom: 16 }}>Demo data — no audio in demo mode.</div>}
 
