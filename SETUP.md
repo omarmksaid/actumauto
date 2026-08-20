@@ -146,6 +146,18 @@ cp .env.local.example .env.local   # (create it — see the web env table below)
 npm install
 npm run dev               # http://localhost:3001
 ```
+### Frontend against the deployed backend
+
+To work on the dashboard without running the API locally:
+
+```bash
+./scripts/use-backend.sh deployed   # or: local
+cd web && npm run dev               # restart — NEXT_PUBLIC_* are build-time
+```
+
+`deployed` points at Railway, so only `npm run dev` in `web/` is needed — no API, no tunnel, and
+you're reading the same data customers see. Switch to `local` when changing backend code too.
+
 With **no** `NEXT_PUBLIC_SUPABASE_URL` set, the dashboard runs in **demo mode** (seeded data, zero
 config) — useful for UI work. Set the web env vars to hit the real backend.
 
