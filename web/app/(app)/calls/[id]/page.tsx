@@ -78,7 +78,7 @@ function AudioPlayer({ src, duration }: { src: string; duration: number }) {
   const [t, setT] = useState(0);
   const [len, setLen] = useState(duration);
   const [rate, setRate] = useState(1);
-  const [peaks, setPeaks] = useState<number[] | null>(null);
+  const [peaks, setPeaks] = useState<{ agent: number[]; customer: number[] | null } | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -88,16 +88,26 @@ function AudioPlayer({ src, duration }: { src: string; duration: number }) {
         const buf = await (await fetch(src)).arrayBuffer();
         const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
         const audio = await ctx.decodeAudioData(buf);
-        const raw = audio.getChannelData(0);
-        const N = 160, block = Math.floor(raw.length / N);
-        const out: number[] = [];
-        for (let i = 0; i < N; i++) {
-          let sum = 0;
-          for (let j = 0; j < block; j++) sum += Math.abs(raw[i * block + j] || 0);
-          out.push(sum / block);
+        const N = 200;
+        const envelope = (ch: Float32Array) => {
+          const block = Math.floor(ch.length / N), out: number[] = [];
+          for (let i = 0; i < N; i++) {
+            let sum = 0;
+            for (let j = 0; j < block; j++) sum += Math.abs(ch[i * block + j] || 0);
+            out.push(sum / block);
+          }
+          return out;
+        };
+        // Vapi's stereo mix puts the assistant on channel 0 and the caller on channel 1.
+        const agentRaw = envelope(audio.getChannelData(0));
+        const custRaw = audio.numberOfChannels > 1 ? envelope(audio.getChannelData(1)) : null;
+        // Normalize both against the SAME peak, otherwise a quiet speaker looks as loud as a
+        // shouting one and the comparison is meaningless.
+        const max = Math.max(...agentRaw, ...(custRaw ?? []), 0.0001);
+        if (!cancelled) {
+          setPeaks({ agent: agentRaw.map((v) => v / max), customer: custRaw?.map((v) => v / max) ?? null });
+          setLen(audio.duration);
         }
-        const max = Math.max(...out, 0.0001);
-        if (!cancelled) { setPeaks(out.map((v) => v / max)); setLen(audio.duration); }
         ctx.close();
       } catch { if (!cancelled) setFailed(true); }   // fall back to a plain progress bar
     })();
@@ -130,21 +140,18 @@ function AudioPlayer({ src, duration }: { src: string; duration: number }) {
         onEnded={() => { setPlaying(false); setT(0); }} />
 
       <div onClick={seek} style={{
-        display: "flex", alignItems: "center", gap: 1.5, height: 64, cursor: "pointer",
-        padding: "0 2px", background: "var(--bg)", borderRadius: "var(--radius)",
+        cursor: "pointer", padding: "10px 8px", background: "var(--bg)",
+        borderRadius: "var(--radius)", position: "relative",
       }}>
-        {(peaks ?? Array.from({ length: 160 }, () => 0.12)).map((v, i) => {
-          const played = i / 160 <= pct;
-          return (
-            <div key={i} style={{
-              flex: 1,
-              height: `${Math.max(3, v * 90)}%`,
-              borderRadius: 1,
-              background: played ? "var(--accent)" : "var(--line)",
-              transition: peaks ? "background .08s" : undefined,
-            }} />
-          );
-        })}
+        <Track bars={peaks?.agent ?? null} pct={pct} color="var(--hot)" label="Agent" />
+        {peaks?.customer && (
+          <Track bars={peaks.customer} pct={pct} color="var(--accent)" label="Caller" />
+        )}
+        {/* Playhead spans both tracks so the two are read as one timeline. */}
+        <div style={{
+          position: "absolute", top: 6, bottom: 6, left: `calc(8px + ${pct * 100}% * 0.985)`,
+          width: 1.5, background: "var(--ink)", opacity: 0.55, pointerEvents: "none",
+        }} />
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
@@ -160,6 +167,30 @@ function AudioPlayer({ src, duration }: { src: string; duration: number }) {
           {fmtT(t)} / {fmtT(len)}
         </span>
         {failed && <span className="hint">Waveform unavailable — playback still works.</span>}
+      </div>
+    </div>
+  );
+}
+
+/** One speaker's waveform. Played bars are solid; the rest are ghosted. */
+function Track({ bars, pct, color, label }:
+  { bars: number[] | null; pct: number; color: string; label: string }) {
+  const data = bars ?? Array.from({ length: 200 }, () => 0.08);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span className="hint" style={{ width: 46, fontSize: 11, color, fontWeight: 700, flexShrink: 0 }}>
+        {label}
+      </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 1, height: 34, flex: 1 }}>
+        {data.map((v, i) => (
+          <div key={i} style={{
+            flex: 1,
+            height: `${Math.max(2, v * 100)}%`,
+            borderRadius: 1,
+            background: color,
+            opacity: i / data.length <= pct ? 1 : 0.22,
+          }} />
+        ))}
       </div>
     </div>
   );

@@ -46,7 +46,7 @@ export default function HandoffsPage() {
     setLoading(true);
     Promise.all([
       apiCall<{ handoffs: HandoffRow[] }>(`/agent/handoffs?status=${status}`),
-      apiCall<any>("/agent/funnel"),
+      apiCall<any>("/agent/funnel?range=1m"),
     ])
       .then(([h, s]) => { setRows(h.handoffs); setStats(s); })
       .catch((e) => setError(e.message))
@@ -55,13 +55,27 @@ export default function HandoffsPage() {
 
   async function resolve(id: string) {
     const prev = rows;
+    const prevStats = stats;
+    // Optimistic: drop the row AND decrement the tiles together, so the count can't disagree with
+    // the list the user is looking at.
     setRows((r) => r.filter((x) => x.id !== id || status !== "open"));
+    const row = rows.find((x) => x.id === id);
+    if (stats && row) {
+      setStats({
+        ...stats,
+        handoffs: {
+          ...stats.handoffs,
+          open: Math.max(0, stats.handoffs.open - 1),
+          needs_callback: Math.max(0, stats.handoffs.needs_callback - (row.transferred ? 0 : 1)),
+        },
+      });
+    }
     try {
       await apiCall(`/agent/handoffs/${id}`, {
         method: "PATCH", body: JSON.stringify({ status: "resolved" }),
       });
     } catch (e: any) {
-      setRows(prev);
+      setRows(prev); setStats(prevStats);      // roll back both together
       setError(e.message);
     }
   }
@@ -86,7 +100,7 @@ export default function HandoffsPage() {
         <div className="grid-4" style={{ marginBottom: 16 }}>
           <Stat label="Open" value={stats.handoffs.open} />
           <Stat label="Needs callback" value={stats.handoffs.needs_callback} warn={stats.handoffs.needs_callback > 0} />
-          <Stat label="Inbound calls (30d)" value={stats.inbound.calls_30d} />
+          <Stat label="Inbound calls (30d)" value={stats.inbound.calls} />
           <Stat
             label={`Identified · ${stats.inbound.anonymous} anonymous`}
             value={stats.inbound.identify_rate != null ? `${Math.round(stats.inbound.identify_rate * 100)}%` : "—"}

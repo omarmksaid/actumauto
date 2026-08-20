@@ -14,6 +14,9 @@ import { env } from "../lib/env";
  * Ask Vapi for a playable recording URL. The webhook's `recordingUrl` points at private R2 and
  * returns 400 to a browser; only the presigned variant streams. It expires within hours, which is
  * why we fetch on demand instead of persisting it.
+ *
+ * Stereo is preferred: channel 0 is the assistant and channel 1 the customer, which lets the
+ * player draw them as separate tracks — you can see who talked over whom at a glance.
  */
 async function vapiPresignedRecording(vapiCallId: string): Promise<string | null> {
   try {
@@ -22,7 +25,7 @@ async function vapiPresignedRecording(vapiCallId: string): Promise<string | null
     });
     if (!r.ok) return null;
     const a = (await r.json())?.artifact ?? {};
-    return a.presignedMonoUrl ?? a.presignedStereoUrl ?? null;
+    return a.presignedStereoUrl ?? a.presignedMonoUrl ?? null;
   } catch {
     return null;   // playback is a nice-to-have; never fail the page over it
   }
