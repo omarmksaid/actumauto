@@ -26,7 +26,7 @@ function HANDOFF_TOOL(server: any) {
       function: {
         name: "log_handoff",
         description:
-          "Record why this caller needs a human, then immediately call transferCall.",
+          "Record why they need a human, then immediately call transferCall.",
         parameters: {
           type: "object",
           properties: {
@@ -35,8 +35,8 @@ function HANDOFF_TOOL(server: any) {
               enum: ["where_is_my_car", "pricing", "complaint", "requested_human", "out_of_scope", "other"],
               description: "Why you're transferring.",
             },
-            vehicle_hint: { type: "string", description: "Vehicle they mentioned, their words." },
-            notes: { type: "string", description: "One line of context for the advisor." },
+            vehicle_hint: { type: "string", description: "Vehicle they mentioned." },
+            notes: { type: "string", description: "One line for the advisor." },
           },
           required: ["reason"],
         },
@@ -60,7 +60,7 @@ function toolDefinitions(ctx: InboundContext) {
       function: {
         name: "lookup_services",
         description:
-          "Search the dealership's service catalog. Returns real entries only, never prices.",
+          "Search the service catalog. Real entries only, never prices.",
         parameters: {
           type: "object",
           properties: {
@@ -81,18 +81,17 @@ function toolDefinitions(ctx: InboundContext) {
       function: {
         name: "check_service_due",
         description:
-          "Work out what a vehicle is due for from details the CALLER gives you. Use when someone " +
-          "asks what their car needs and you don't have their record. Ask make, model, year, and " +
-          "either current mileage or roughly when it was last serviced.",
+          "What a vehicle is due for, from details the caller states. Use when you don't have " +
+          "their record. Needs make/model/year plus mileage or months since last service.",
         parameters: {
           type: "object",
           properties: {
-            make: { type: "string", description: "e.g. Toyota" },
-            model: { type: "string", description: "e.g. RAV4" },
-            year: { type: "number", description: "Model year." },
-            mileage: { type: "number", description: "Current odometer, if they know it." },
-            last_service_months_ago: { type: "number", description: "Roughly how many months since the last service." },
-            mileage_at_last_service: { type: "number", description: "Odometer at the last service, if known." },
+            make: { type: "string" },
+            model: { type: "string" },
+            year: { type: "number" },
+            mileage: { type: "number", description: "Current odometer." },
+            last_service_months_ago: { type: "number" },
+            mileage_at_last_service: { type: "number" },
           },
           required: ["make", "model", "year"],
         },
@@ -127,7 +126,7 @@ function toolDefinitions(ctx: InboundContext) {
         function: {
           name: "get_my_vehicles",
           description:
-            "The caller's vehicles on file.",
+            "The caller's vehicles.",
           parameters: { type: "object", properties: {} },
         },
         server,
@@ -137,7 +136,7 @@ function toolDefinitions(ctx: InboundContext) {
         function: {
           name: "get_due_service",
           description:
-            "What service is coming due on the caller's vehicles.",
+            "What's coming due on the caller's vehicles.",
           parameters: { type: "object", properties: {} },
         },
         server,
@@ -147,8 +146,7 @@ function toolDefinitions(ctx: InboundContext) {
         function: {
           name: "list_appointments",
           description:
-            "The caller's upcoming appointments. Use when they ask about, want to change, or want " +
-            "to cancel a visit.",
+            "The caller's upcoming appointments.",
           parameters: { type: "object", properties: {} },
         },
         server,
@@ -158,13 +156,12 @@ function toolDefinitions(ctx: InboundContext) {
         function: {
           name: "cancel_appointment",
           description:
-            "Cancel one of the caller's upcoming appointments. Confirm which one and that they're " +
-            "sure before calling this.",
+            "Cancel an appointment. Confirm which one first.",
           parameters: {
             type: "object",
             properties: {
               appointment_id: { type: "string", description: "id from list_appointments." },
-              reason: { type: "string", description: "Why, in their words. Optional." },
+              reason: { type: "string" },
             },
             required: ["appointment_id"],
           },
@@ -176,19 +173,15 @@ function toolDefinitions(ctx: InboundContext) {
         function: {
           name: "book_service",
           description:
-            "Capture an appointment request. Use the wording this tool returns back.",
+            "Capture an appointment request. Use the wording it returns.",
           parameters: {
             type: "object",
             properties: {
-              preferred_time: { type: "string", description: "Day/time they asked for, their words." },
-              vehicle_id: { type: "string", description: "id from get_my_vehicles. Omit if one vehicle." },
-              service_ops: { type: "array", items: { type: "string" }, description: "What they're coming in for." },
-              drop_off: {
-                type: "string",
-                enum: ["waiting", "dropping_off"],
-                description: "Ask whether they'll wait at the dealership or drop the car off.",
-              },
-              notes: { type: "string", description: "Anything the advisor should know." },
+              preferred_time: { type: "string", description: "Day/time in their words." },
+              vehicle_id: { type: "string", description: "id from get_my_vehicles." },
+              service_ops: { type: "array", items: { type: "string" } },
+              drop_off: { type: "string", enum: ["waiting", "dropping_off"] },
+              notes: { type: "string" },
             },
             required: ["preferred_time"],
           },
