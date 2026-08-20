@@ -9,6 +9,7 @@ import { scheduleRoutes } from "./routes/schedules";
 import { teamRoutes, acceptInvite, lookupInvite } from "./routes/team";
 import { vapiWebhooks } from "./routes/webhooks/vapi";
 import { inboundRoutes } from "./routes/inbound";
+import { leadRoutes } from "./routes/leads";
 import { supabaseAdmin } from "./lib/supabase";
 import { startWorker, stopWorker } from "./jobs/worker";
 
@@ -28,6 +29,9 @@ app.route("/webhooks", vapiWebhooks);     // /webhooks/vapi   (thin durable hand
 // ── Inbound service line (§16) — provider-authenticated via the Vapi shared secret.
 // Answers synchronously (assistant config + in-call tools), so it is NOT a durable-inbox path.
 app.route("/inbound", inboundRoutes);     // /inbound/assistant, /inbound/tools
+
+// ── Contact sales (public marketing form; rate-limited, service-role write) ──
+app.route("/leads", leadRoutes);
 
 // ── Unsubscribe (public) ──
 // We no longer send outbound campaigns, so there is nothing to cancel — but the link still has to

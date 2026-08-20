@@ -48,8 +48,14 @@ export default function Login() {
           {loading ? "Signing in…" : "Sign in"}
         </button>
       </form>
-      <p style={{ fontSize: 14, color: "var(--muted)", textAlign: "center", marginTop: 16 }}>
-        New dealership? <Link href="/signup" style={{ color: "var(--accent-deep)", fontWeight: 600 }}>Create a workspace</Link>
+      <p style={{ fontSize: 14, color: "var(--muted)", textAlign: "center", marginTop: 14 }}>
+        <Link href="/forgot-password" style={{ color: "var(--accent-deep)", fontWeight: 600 }}>
+          Forgot your password?
+        </Link>
+      </p>
+      {/* Dealerships are sold to, not self-served — so this points at sales, not signup. */}
+      <p style={{ fontSize: 14, color: "var(--muted)", textAlign: "center", marginTop: 4 }}>
+        New dealership? <Link href="/?contact=1" style={{ color: "var(--accent-deep)", fontWeight: 600 }}>Contact sales</Link>
       </p>
     </div>
   );
