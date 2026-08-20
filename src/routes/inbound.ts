@@ -227,10 +227,31 @@ const ANON_REFUSAL =
 
 async function lookupServices(query: string, pinned: PinnedCall): Promise<string> {
   // Safe for anonymous callers: the catalog is dealership-level, not customer-level.
-  let q = supabaseAdmin
+  const base = () => supabaseAdmin
     .from("service_offerings")
-    .select("name, description, category, typical_duration_min")
+    .select("name, description, category, typical_duration_min, aliases")
     .eq("company_id", pinned.companyId).eq("active", true);
+
+  // ALIASES FIRST. A caller saying "CEL" or "MPI" is giving the strongest possible signal, but
+  // those are short acronyms that the stemmer and stopword filter would discard. Check the raw
+  // query and its words against the dealership's own alias list before falling back to fuzzy
+  // matching on names and descriptions.
+  const rawWords = [query.trim(), ...query.toLowerCase().split(/[^a-z0-9/']+/)]
+    .map((w) => w.trim()).filter((w) => w.length >= 2);
+  if (rawWords.length) {
+    const { data: all } = await base();
+    const hit = (all ?? []).filter((o: any) =>
+      (o.aliases ?? []).some((a: string) =>
+        rawWords.some((w) => a.toLowerCase() === w.toLowerCase())));
+    if (hit.length) {
+      return hit.slice(0, 5).map((o: any) =>
+        `- ${o.name}${o.description ? `: ${o.description}` : ""}` +
+        `${o.typical_duration_min ? ` (about ${o.typical_duration_min} min)` : ""}`
+      ).join("\n") + "\n(No pricing available — an advisor quotes cost.)";
+    }
+  }
+
+  let q = base();
 
   // Callers speak naturally ("brakes", "my brakes are squeaking"), catalog entries are formal
   // ("Brake pad replacement"). Match on individual word STEMS so plurals and phrases still hit:
@@ -263,11 +284,15 @@ async function lookupServices(query: string, pinned: PinnedCall): Promise<string
   // return only the top few — a long list read aloud is useless to a caller anyway.
   const scored = data.map((o) => {
     const name = o.name.toLowerCase();
+    const aliasText = ((o as any).aliases ?? []).join(" ").toLowerCase();
     let score = 0;
     for (const w of stems) {
       const inName = new RegExp(`\\b${w}`).test(name);          // word-start in the NAME
+      const inAlias = new RegExp(`\\b${w}`).test(aliasText);
       const inDesc = new RegExp(`\\b${w}`).test((o.description ?? "").toLowerCase());
+      // Aliases outrank the description: they're the dealership telling us what callers say.
       if (inName) score += 10;
+      else if (inAlias) score += 8;
       else if (inDesc) score += 3;
       else if (name.includes(w)) score += 1;                    // mid-word: weak (repAIR)
     }

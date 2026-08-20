@@ -123,15 +123,18 @@ function ServiceCatalog({ services, setServices, canEdit }:
   const [draft, setDraft] = useState<any>(null);
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [cat, setCat] = useState("all");
+  const [search, setSearch] = useState("");
 
   function startEdit(sv: ServiceOffering) {
     setEditing(sv.id); setAdding(false); setErr(null);
     setDraft({ name: sv.name, description: sv.description ?? "", category: sv.category ?? "maintenance",
-               typical_duration_min: sv.typical_duration_min ?? "" });
+               typical_duration_min: sv.typical_duration_min ?? "",
+               aliases: ((sv as any).aliases ?? []).join(", ") });
   }
   function startAdd() {
     setAdding(true); setEditing(null); setErr(null);
-    setDraft({ name: "", description: "", category: "maintenance", typical_duration_min: "" });
+    setDraft({ name: "", description: "", category: "maintenance", typical_duration_min: "", aliases: "" });
   }
 
   async function save() {
@@ -141,6 +144,7 @@ function ServiceCatalog({ services, setServices, canEdit }:
       description: draft.description?.trim() || null,
       category: draft.category || null,
       typical_duration_min: draft.typical_duration_min ? parseInt(draft.typical_duration_min, 10) : null,
+      aliases: String(draft.aliases ?? "").split(",").map((a: string) => a.trim()).filter(Boolean),
     };
     try {
       if (adding) {
@@ -175,9 +179,8 @@ function ServiceCatalog({ services, setServices, canEdit }:
     setServices(services.filter((x) => x.id !== sv.id));
   }
 
-  const editor = (
-    <tr>
-      <td colSpan={5} style={{ background: "var(--bg)" }}>
+  const editorFields = (
+    <div>
         <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr", alignItems: "start" }}>
           <label style={{ gridColumn: "1 / -1" }}>
             <div className="hint" style={{ marginBottom: 4 }}>Service name</div>
@@ -204,57 +207,119 @@ function ServiceCatalog({ services, setServices, canEdit }:
             <input type="number" value={draft?.typical_duration_min ?? ""} placeholder="45"
               onChange={(e) => setDraft({ ...draft, typical_duration_min: e.target.value })} />
           </label>
+          <label style={{ gridColumn: "1 / -1" }}>
+            <div className="hint" style={{ marginBottom: 4 }}>
+              Also matches <span style={{ fontWeight: 400 }}>— what callers say for this, comma-separated</span>
+            </div>
+            <input value={draft?.aliases ?? ""} style={{ width: "100%" }}
+              placeholder="CEL, check engine, warning light"
+              onChange={(e) => setDraft({ ...draft, aliases: e.target.value })} />
+          </label>
           <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8 }}>
             <button className="btn btn-primary" onClick={save}>Save</button>
             <button className="btn btn-quiet" onClick={() => { setEditing(null); setAdding(false); }}>Cancel</button>
           </div>
         </div>
-        {err && <div className="hint" style={{ color: "var(--hot)", marginTop: 8 }}>{err}</div>}
-      </td>
-    </tr>
+    </div>
   );
 
+  const cats = [...new Set(services.map((sv) => sv.category ?? "other"))].sort();
+  const shown = services.filter((sv) => {
+    if (cat !== "all" && (sv.category ?? "other") !== cat) return false;
+    if (!search.trim()) return true;
+    const t = search.toLowerCase();
+    return sv.name.toLowerCase().includes(t)
+      || (sv.description ?? "").toLowerCase().includes(t)
+      || ((sv as any).aliases ?? []).some((a: string) => a.toLowerCase().includes(t));
+  });
+  const grouped = cats
+    .map((c) => [c, shown.filter((sv) => (sv.category ?? "other") === c)] as [string, ServiceOffering[]])
+    .filter(([, list]) => list.length);
+
   return (
-    <div className="card">
-      <div className="card-pad" style={{ paddingBottom: 0 }}>
-        <div className="row-between">
-          <div>
-            <div className="section-label" style={{ marginBottom: 4 }}>Services we offer</div>
-            <p className="hint">
-              The agent answers &ldquo;do you do X?&rdquo; from this list only, and never quotes a price.
-            </p>
-          </div>
+    <div>
+      <div className="row-between" style={{ marginBottom: 10, gap: 10, flexWrap: "wrap" }}>
+        <p className="hint" style={{ margin: 0, flex: "1 1 260px" }}>
+          The agent answers &ldquo;do you do X?&rdquo; from this list only, and never quotes a price.
+        </p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input placeholder="Search services or aliases" value={search}
+            onChange={(e) => setSearch(e.target.value)} style={{ maxWidth: 230 }} />
           {canEdit && !adding && <button className="btn btn-primary" onClick={startAdd}>Add service</button>}
         </div>
       </div>
-      <table>
-        <thead><tr><th>Service</th><th>Category</th><th>Duration</th><th>Status</th><th></th></tr></thead>
-        <tbody>
-          {adding && editor}
-          {services.map((sv) => editing === sv.id ? <tr key={sv.id}>{editor.props.children}</tr> : (
-            <tr key={sv.id}>
-              <td>{sv.name}<div className="hint">{sv.description ?? "—"}</div></td>
-              <td className="hint">{sv.category ?? "—"}</td>
-              <td className="hint">{sv.typical_duration_min ? `${sv.typical_duration_min} min` : "—"}</td>
-              <td><span className={`chip ${sv.active ? "chip-ok" : "chip-muted"}`}>{sv.active ? "active" : "hidden"}</span></td>
-              <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        {[["all", `All · ${services.length}`] as [string, string],
+          ...cats.map((c) => [c, `${c[0].toUpperCase()}${c.slice(1)} · ${services.filter((sv) => (sv.category ?? "other") === c).length}`] as [string, string])
+        ].map(([k, label]) => (
+          <button key={k} onClick={() => setCat(k)} style={{
+            border: "1px solid var(--line)", cursor: "pointer", padding: "5px 13px", borderRadius: 999,
+            font: "inherit", fontSize: 13, fontWeight: 600,
+            background: cat === k ? "var(--ink)" : "var(--surface)",
+            color: cat === k ? "#fff" : "var(--muted)",
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {adding && <div className="card card-pad" style={{ marginBottom: 14 }}>{editorFields}</div>}
+      {err && <div className="banner banner-error" style={{ marginBottom: 12 }}>{err}</div>}
+
+      {grouped.map(([category, list]) => (
+        <div key={category} style={{ marginBottom: 20 }}>
+          <div className="section-label" style={{ marginBottom: 8 }}>{category}</div>
+          <div className="card" style={{ overflow: "hidden" }}>
+            {list.map((sv, idx) => editing === sv.id ? (
+              <div key={sv.id} className="card-pad" style={{ borderTop: idx ? "1px solid var(--line)" : undefined, background: "var(--bg)" }}>
+                {editorFields}
+              </div>
+            ) : (
+              <div key={sv.id} style={{
+                display: "flex", alignItems: "flex-start", gap: 14, padding: "14px 18px",
+                borderTop: idx ? "1px solid var(--line)" : undefined,
+                opacity: sv.active ? 1 : 0.55,
+              }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 650 }}>{sv.name}</span>
+                    {!sv.active && (
+                      <span className="chip chip-muted">not offered — agent declines</span>
+                    )}
+                  </div>
+                  {sv.description && <div className="hint" style={{ marginTop: 2 }}>{sv.description}</div>}
+                  <div className="hint" style={{ marginTop: 4, fontSize: 12.5 }}>
+                    {((sv as any).aliases ?? []).length > 0
+                      ? <>Also matches: {((sv as any).aliases ?? []).join(", ")}</>
+                      : <span style={{ opacity: 0.7 }}>No aliases — callers must say the exact name</span>}
+                  </div>
+                </div>
+                <span className="hint" style={{ flexShrink: 0, minWidth: 56, textAlign: "right" }}>
+                  {sv.typical_duration_min ? `${sv.typical_duration_min} min` : "—"}
+                </span>
                 {canEdit ? (
-                  <>
-                    <button className="btn" onClick={() => startEdit(sv)}>Edit</button>{" "}
-                    <button className="btn" onClick={() => toggle(sv)}>{sv.active ? "Hide" : "Show"}</button>{" "}
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    <button className="btn" onClick={() => startEdit(sv)}>Edit</button>
+                    <button className="btn" onClick={() => toggle(sv)}>{sv.active ? "Hide" : "Offer"}</button>
                     <button className="btn btn-quiet" onClick={() => remove(sv)}>Remove</button>
-                  </>
-                ) : <span className="hint">—</span>}
-              </td>
-            </tr>
-          ))}
-          {services.length === 0 && !adding && (
-            <tr><td colSpan={5} className="muted">
-              No services yet — the agent will transfer every service question until you add some.
-            </td></tr>
-          )}
-        </tbody>
-      </table>
+                  </div>
+                ) : (
+                  <span className={`chip ${sv.active ? "chip-ok" : "chip-muted"}`}>
+                    {sv.active ? "offered" : "hidden"}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {grouped.length === 0 && (
+        <div className="card card-pad muted">
+          {services.length === 0
+            ? "No services yet — the agent will transfer every service question until you add some."
+            : "No services match that filter."}
+        </div>
+      )}
     </div>
   );
 }

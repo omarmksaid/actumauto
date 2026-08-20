@@ -171,11 +171,12 @@ export interface ServiceOffering {
   operations: string[];
   typical_duration_min: number | null;
   active: boolean;
+  aliases?: string[];
 }
 export const demoServices: ServiceOffering[] = [
-  { id: "s1", name: "Oil & filter change", description: "Full synthetic oil and filter replacement with a multi-point inspection.", category: "maintenance", operations: ["LOF"], typical_duration_min: 45, active: true },
+  { id: "s1", name: "Oil & filter change", description: "Full synthetic oil and filter replacement with a multi-point inspection.", category: "maintenance", operations: ["LOF"], typical_duration_min: 45, active: true, aliases: ["oil change", "LOF"] },
   { id: "s2", name: "Tire rotation & balance", description: "Rotate and balance all four tires, set pressures.", category: "tires", operations: ["ROT", "BAL"], typical_duration_min: 40, active: true },
-  { id: "s3", name: "Brake pad replacement", description: "Front or rear pad replacement with rotor inspection.", category: "repair", operations: ["BRK-F", "BRK-R"], typical_duration_min: 120, active: true },
+  { id: "s3", name: "Brake pad replacement", description: "Front or rear pad replacement with rotor inspection.", category: "repair", operations: ["BRK-F", "BRK-R"], typical_duration_min: 120, active: true, aliases: ["squeaking", "grinding", "brake job"] },
   { id: "s4", name: "Wheel alignment", description: "Four-wheel alignment to factory spec.", category: "repair", operations: ["ALN"], typical_duration_min: 90, active: true },
   { id: "s5", name: "Multi-point inspection", description: "Complimentary inspection of brakes, fluids, belts, and tires.", category: "inspection", operations: ["MPI"], typical_duration_min: 30, active: true },
   { id: "s6", name: "Cabin & engine air filter", description: "Replace cabin and engine air filters.", category: "maintenance", operations: ["CAF", "EAF"], typical_duration_min: 25, active: true },

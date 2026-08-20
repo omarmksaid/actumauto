@@ -128,6 +128,7 @@ settingsRoutes.post("/services", requireAdmin, async (c) => {
     description: b.description ?? null,
     category: b.category ?? null,
     operations: Array.isArray(b.operations) ? b.operations : [],
+    aliases: Array.isArray(b.aliases) ? b.aliases.map(String).filter(Boolean).slice(0, 20) : [],
     typical_duration_min: b.typical_duration_min ?? null,
     active: b.active ?? true,
   }).select("*").maybeSingle();
@@ -142,6 +143,8 @@ settingsRoutes.patch("/services/:id", requireAdmin, async (c) => {
   for (const k of ["name", "description", "category", "operations", "typical_duration_min", "active"]) {
     if (k in b) patch[k] = b[k];
   }
+  // Capped: aliases are matched per query, so an unbounded list would slow every lookup.
+  if (Array.isArray(b.aliases)) patch.aliases = b.aliases.map(String).filter(Boolean).slice(0, 20);
   const { data, error } = await supabaseAdmin.from("service_offerings")
     .update(patch).eq("id", c.req.param("id")).eq("company_id", companyId).select("*").maybeSingle();
   if (error) return c.json({ error: error.message }, 400);
