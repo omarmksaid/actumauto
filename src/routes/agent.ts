@@ -269,6 +269,34 @@ agentRoutes.get("/calls", async (c) => {
   return c.json({ calls: collapsed, counts });
 });
 
+// ── Recording archive health ────────────────────────────────────────────────
+// Surfaced because the dangerous failure is a SILENT one: believing you have audio you don't.
+agentRoutes.get("/archive/status", async (c) => {
+  const companyId = cid(c);
+  const { data } = await supabaseAdmin
+    .from("calls").select("archive_status, recording_bytes, recording_expires_at, archive_error")
+    .eq("company_id", companyId);
+  const rows = data ?? [];
+  const by: Record<string, number> = {};
+  for (const r of rows) by[r.archive_status] = (by[r.archive_status] ?? 0) + 1;
+  const bytes = rows.reduce((s, r) => s + Number(r.recording_bytes ?? 0), 0);
+  const soonest = rows
+    .filter((r) => r.recording_expires_at)
+    .map((r) => r.recording_expires_at as string).sort()[0] ?? null;
+
+  const { data: co } = await supabaseAdmin
+    .from("companies").select("recording_retention_days").eq("id", companyId).maybeSingle();
+
+  return c.json({
+    by_status: by,
+    stored_mb: Number((bytes / 1048576).toFixed(1)),
+    retention_days: co?.recording_retention_days ?? 180,
+    next_expiry: soonest,
+    failures: rows.filter((r) => r.archive_status === "failed")
+      .map((r) => r.archive_error).filter(Boolean).slice(0, 5),
+  });
+});
+
 // ── Handoff queue (§16b) — callers the agent sent to a human ─────────────────
 agentRoutes.get("/handoffs", async (c) => {
   const companyId = cid(c);
@@ -301,7 +329,7 @@ agentRoutes.get("/calls/:id", async (c) => {
 
   const { data: call } = await supabaseAdmin
     .from("calls")
-    .select("id, customer_id, vapi_call_id, recording_url, duration_sec, outcome, cost_usd, created_at, metadata, customers(full_name, phone, email)")
+    .select("id, customer_id, vapi_call_id, recording_url, recording_path, archive_status, duration_sec, outcome, cost_usd, created_at, metadata, customers(full_name, phone, email)")
     .eq("id", id).eq("company_id", companyId).maybeSingle();
   if (!call) return c.json({ error: "not found" }, 404);
 
@@ -312,15 +340,19 @@ agentRoutes.get("/calls/:id", async (c) => {
   // is NOT publicly fetchable (400), so playing it directly fails silently in an <audio> tag.
   // The playable form is `artifact.presignedMonoUrl`, which expires in hours, so it has to be
   // fetched fresh per view rather than stored.
-  let recordingUrl: string | null = call.recording_url;
-  if (recordingUrl?.startsWith("recordings/")) {
-    // Ours, in Supabase Storage — short-lived signed URL (§8 invariant 6).
+  // Prefer OUR archived copy: it outlives Vapi's retention and is the system of record. Fall
+  // back to a presigned Vapi URL while a call is still waiting to be archived.
+  let recordingUrl: string | null = null;
+  const archivedPath = (call as any).recording_path;
+  if (archivedPath) {
     const { data: signed } = await supabaseAdmin.storage
-      .from("recordings").createSignedUrl(recordingUrl.replace(/^recordings\//, ""), 3600);
-    recordingUrl = signed?.signedUrl ?? recordingUrl;
-  } else if (recordingUrl && (call as any).vapi_call_id && env.VAPI_API_KEY) {
-    recordingUrl = await vapiPresignedRecording((call as any).vapi_call_id) ?? recordingUrl;
+      .from("recordings").createSignedUrl(archivedPath, 3600);
+    recordingUrl = signed?.signedUrl ?? null;
   }
+  if (!recordingUrl && call.recording_url && (call as any).vapi_call_id && env.VAPI_API_KEY) {
+    recordingUrl = await vapiPresignedRecording((call as any).vapi_call_id);
+  }
+  recordingUrl = recordingUrl ?? null;
 
   return c.json({ call: { ...call, recording_url: recordingUrl }, transcript: turns ?? [] });
 });

@@ -24,12 +24,13 @@ const cid = (c: any) => c.get("companyId") as string;
 settingsRoutes.get("/", async (c) => {
   const companyId = cid(c);
   const { data: company } = await supabaseAdmin
-    .from("companies").select("name, timezone, settings, business_hours, agent_enabled").eq("id", companyId).single();
+    .from("companies").select("name, timezone, settings, business_hours, agent_enabled, recording_retention_days").eq("id", companyId).single();
   const settings = (company?.settings ?? {}) as any;
   return c.json({
     company: { name: company?.name, timezone: company?.timezone },
     // The agent quotes these to callers and refuses bookings outside them (§16d).
     business_hours: company?.business_hours ?? {},
+    recording_retention_days: company?.recording_retention_days ?? 180,
     agent_enabled: company?.agent_enabled !== false,
     voice: settings.voice ?? { provider: "cartesia", voice_id: "" },
     persona_prompt: settings.persona_prompt ?? "",
@@ -66,6 +67,12 @@ settingsRoutes.put("/", requireAdmin, async (c) => {
       }
     }
     await supabaseAdmin.from("companies").update({ business_hours: clean }).eq("id", companyId);
+  }
+
+  if (body.recording_retention_days != null) {
+    // 0 = keep forever. Capped at 10 years so a typo can't create unbounded storage.
+    const d = Math.max(0, Math.min(3650, Number(body.recording_retention_days) || 0));
+    await supabaseAdmin.from("companies").update({ recording_retention_days: d }).eq("id", companyId);
   }
 
   if (typeof body.agent_enabled === "boolean") {
