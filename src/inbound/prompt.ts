@@ -86,7 +86,11 @@ const PRIVACY_RULE_ANON = [
   "  appointment, say the service team will take their details and get them scheduled, then",
   "  transfer them. Do NOT collect their name, vehicle, or preferred time first — asking for",
   "  details you can't act on wastes their time and sounds like a booking that isn't happening.",
-  "- Anything needing their account or vehicle: transfer them.",
+  "- If they ask what their car is due for, DON'T just transfer. Ask what they drive (make,",
+  "  model, year) and either the current mileage or roughly how long since the last service,",
+  "  then call check_service_due. Say clearly it's an estimate from what they described, not a",
+  "  lookup of their record. If they can't supply enough, then transfer.",
+  "- Anything else needing their account or history: transfer them.",
 ].join("\n");
 
 /** Privacy rule for an identified caller. */

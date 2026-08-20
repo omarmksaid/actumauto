@@ -21,7 +21,9 @@
 import { Hono } from "hono";
 import { supabaseAdmin } from "../lib/supabase";
 import { env } from "../lib/env";
-import { resolveInboundContext, loadVehiclesWithDue, InboundContext } from "../inbound/identify";
+import { resolveInboundContext, loadVehiclesWithDue, InboundContext, INBOUND_DUE_HORIZON_DAYS } from "../inbound/identify";
+import { computeDue } from "../scheduling/due";
+import { loadIntervalsForVehicle } from "../scheduling/schedules";
 import { buildInboundAssistant } from "../inbound/assistant";
 import { getBookingProvider } from "../booking";
 
@@ -122,6 +124,7 @@ async function runTool(name: string, args: any, pinned: PinnedCall): Promise<str
     case "lookup_services":   return await lookupServices(args.query ?? "", pinned);
     case "get_my_vehicles":   return await getMyVehicles(pinned);
     case "get_due_service":   return await getDueService(pinned);
+    case "check_service_due":  return await checkServiceDue(args, pinned);
     case "book_service":      return await bookService(args, pinned);
     case "log_handoff":         return await logHandoff(args, pinned);
     // Older name kept so a call already in flight during a deploy doesn't break.
@@ -328,6 +331,60 @@ async function getDueService(pinned: PinnedCall): Promise<string> {
     `- ${v.year} ${v.make} ${v.model} (id=${v.id}): ${v.due!.service}, due around ${v.due!.dueOn}` +
     `${v.due!.reason === "mileage" ? ` (~${v.due!.projectedMileage.toLocaleString()} mi)` : " (time-based)"}`
   ).join("\n");
+}
+
+/**
+ * What's due, computed from details the CALLER states rather than a stored record.
+ *
+ * Safe for anonymous callers: nothing is read from the database about them — only the platform's
+ * service schedules, which are dealership-level. It refuses rather than guesses when the caller
+ * can't supply either mileage or a rough last-service date, because a fabricated due date spoken
+ * with confidence is worse than admitting we need the car in front of us.
+ */
+async function checkServiceDue(args: any, pinned: PinnedCall): Promise<string> {
+  const make = String(args.make ?? "").trim();
+  const model = String(args.model ?? "").trim();
+  const year = Number(args.year);
+  if (!make || !model || !year) return "Ask them the make, model, and year first.";
+
+  const mileage = args.mileage != null ? Number(args.mileage) : null;
+  const monthsAgo = args.last_service_months_ago != null ? Number(args.last_service_months_ago) : null;
+  const atLastService = args.mileage_at_last_service != null ? Number(args.mileage_at_last_service) : null;
+
+  if (mileage == null && monthsAgo == null) {
+    return "Ask roughly what the odometer reads, or about how long since the last service — " +
+      "without one of those we can't say what's due. Don't guess.";
+  }
+
+  const today = todayIso();
+  const lastServiceOn = monthsAgo != null
+    ? new Date(new Date(today).setMonth(new Date(today).getMonth() - monthsAgo)).toISOString().slice(0, 10)
+    : null;
+
+  const intervals = await loadIntervalsForVehicle(pinned.companyId, { make, model, year });
+  if (!intervals.length) {
+    return `We don't have a maintenance schedule for a ${year} ${make} ${model}. Say you'd rather ` +
+      `have a technician confirm, and offer to transfer.`;
+  }
+
+  const due = computeDue({
+    id: "adhoc", make, model, year,
+    sold_on: null,
+    mileage,
+    mileage_as_of: mileage != null ? today : null,
+    last_service_on: lastServiceOn,
+    mileage_at_last_service: atLastService,
+    avg_miles_per_day: null,          // falls back to the fleet prior
+  }, intervals, today, INBOUND_DUE_HORIZON_DAYS);
+
+  if (!due) {
+    return "Not enough detail to say what's due. Offer to have an advisor look it up properly.";
+  }
+
+  return `Based on what they told you, their ${year} ${make} ${model} is due for ` +
+    `${due.interval.service_name} around ${due.dueOn}` +
+    (due.reason === "mileage" ? ` (~${due.projectedMileage.toLocaleString()} mi)` : " (time-based)") +
+    `. Say this is an estimate from what they described, not a lookup of their record.`;
 }
 
 async function bookService(args: any, pinned: PinnedCall): Promise<string> {

@@ -73,6 +73,34 @@ function toolDefinitions(ctx: InboundContext) {
     },
   ] : [];
 
+  // Works for anonymous callers too — it reasons from what they tell us about the car, not from
+  // any stored record, so nothing about an unidentified account can leak.
+  if (ctx.agentEnabled) {
+    tools.push({
+      type: "function",
+      function: {
+        name: "check_service_due",
+        description:
+          "Work out what a vehicle is due for from details the CALLER gives you. Use when someone " +
+          "asks what their car needs and you don't have their record. Ask make, model, year, and " +
+          "either current mileage or roughly when it was last serviced.",
+        parameters: {
+          type: "object",
+          properties: {
+            make: { type: "string", description: "e.g. Toyota" },
+            model: { type: "string", description: "e.g. RAV4" },
+            year: { type: "number", description: "Model year." },
+            mileage: { type: "number", description: "Current odometer, if they know it." },
+            last_service_months_ago: { type: "number", description: "Roughly how many months since the last service." },
+            mileage_at_last_service: { type: "number", description: "Odometer at the last service, if known." },
+          },
+          required: ["make", "model", "year"],
+        },
+      },
+      server,
+    });
+  }
+
   // Recording the handoff works in both modes.
   tools.push(HANDOFF_TOOL(server));
 
