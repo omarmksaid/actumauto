@@ -23,7 +23,7 @@ import { supabaseAdmin } from "../lib/supabase";
 import { env } from "../lib/env";
 import { resolveInboundContext, loadVehiclesWithDue, InboundContext, INBOUND_DUE_HORIZON_DAYS } from "../inbound/identify";
 import { computeDue } from "../scheduling/due";
-import { loadShopConfig, availableSlots, checkSlot, openWindow, currentlyInService, spokenTime } from "../scheduling/slots";
+import { loadShopConfig, availableSlots, nextAvailableSlots, checkSlot, openWindow, currentlyInService, spokenTime } from "../scheduling/slots";
 
 /**
  * Resolve "friday" / "tomorrow" / "2026-08-22" to a local YYYY-MM-DD in the shop's timezone.
@@ -618,27 +618,56 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
 /** Open times on a date, so the agent only ever offers slots the shop can actually take. */
 async function checkAvailability(args: any, pinned: PinnedCall): Promise<string> {
   const cfg = await loadShopConfig(pinned.companyId);
+  const mins = Number(args.service_minutes) > 0 ? Number(args.service_minutes) : 45;
+  const rawDate = String(args.date ?? "").trim();
+
+  // NO DATE = "whenever you can take me". Scan forward for the soonest real opening instead of
+  // making the model pick a date: a guessed date lands on a closed day and returns nothing, and
+  // the caller hears "nothing available" from a shop with a free slot tomorrow. Also looks a week
+  // out in the same pass, so someone booking in advance doesn't cost seven round-trips.
+  if (!rawDate) {
+    const days = Number(args.days) > 0 ? Math.min(Number(args.days), 14) : 7;
+    const byDay = await nextAvailableSlots(pinned.companyId, cfg, todayIso(), mins, days, 6);
+    if (!byDay.length) {
+      return `Nothing open in the next ${days} days. Offer to have an advisor call them back.`;
+    }
+    const soonest = byDay[0].slots[0];
+    const later = byDay.slice(1).flatMap((d) => d.slots.map((s) => s.label)).slice(0, 4);
+    return `Soonest: ${soonest.label}. Offer that one first. ` +
+      (later.length
+        ? `Further out: ${later.join(", ")} — only mention these if they'd rather plan ahead.`
+        : `Nothing else open in that window.`);
+  }
 
   // Accept a weekday name or "tomorrow" as well as a date. The model reliably knows what the
   // caller SAID but miscounts which date that is — it offered "Saturday the 23rd" when the 23rd
   // was a Sunday. Resolving here removes a whole class of confidently-wrong answers.
-  const date = resolveDate(String(args.date ?? "").trim(), cfg.timezone);
+  const date = resolveDate(rawDate, cfg.timezone);
   if (!date) return "Couldn't read that date — pass YYYY-MM-DD, a weekday name, or 'tomorrow'.";
-  const mins = Number(args.service_minutes) > 0 ? Number(args.service_minutes) : 45;
   const slots = await availableSlots(pinned.companyId, cfg, date, mins, 6);
 
   const dayName = new Intl.DateTimeFormat("en-US", { timeZone: cfg.timezone, weekday: "long", month: "short", day: "numeric" })
     .format(new Date(`${date}T12:00:00Z`));
 
   if (!slots.length) {
-    return openWindow(cfg, date)
-      ? `Nothing open ${dayName} — we're full. Offer another date.`
-      : `We're closed ${dayName}. Name a day we ARE open and let them choose.`;
+    // Don't dead-end on a full or closed day — name the real alternatives in the same breath.
+    const why = openWindow(cfg, date) ? "we're full" : "we're closed";
+    const fallback = await nextAvailableSlots(pinned.companyId, cfg, date, mins, 7, 3);
+    if (!fallback.length) {
+      return `${why} ${dayName}, and nothing else is open this week. Offer an advisor callback.`;
+    }
+    return `${dayName}: ${why}. Next available: ` +
+      `${fallback.flatMap((d) => d.slots.map((s) => s.label)).slice(0, 3).join(", ")}. ` +
+      `Tell them ${why} then, and offer these.`;
   }
   // Two or three read naturally aloud; a list of six does not.
-  return `${dayName} — open: ${slots.slice(0, 3).map((s) => s.label).join(", ")}` +
-    (slots.length > 3 ? ` (and ${slots.length - 3} more)` : "") +
-    `. Offer two or three, not the whole list.`;
+  const times = slots.slice(0, 3).map((s) =>
+    new Intl.DateTimeFormat("en-US", { timeZone: cfg.timezone, hour: "numeric", minute: "2-digit" })
+      .format(s.startsAt));
+  return `${dayName} is the date — say exactly that, don't recalculate it. ` +
+    `ONLY these times are open: ${times.join(", ")}` +
+    (slots.length > 3 ? ` (${slots.length - 3} more later)` : "") +
+    `. Offer two or three of these. Any other time that day is full — do not offer it.`;
 }
 
 /** The caller's upcoming visits, so they can ask about, change, or cancel one. */

@@ -80,20 +80,42 @@ const CLOSING_RULES = [
   "  then cancel_appointment. Offer to rebook rather than just ending it.",
 ].join("\n");
 
-/** Privacy rule for a caller we could NOT identify. Dynamic — kept out of the cache prefix. */
+/**
+ * Rules for a caller we could NOT identify (dynamic — kept out of the cache prefix).
+ *
+ * These used to be pure refusal: no booking, don't even collect a name. That made an unrecognized
+ * number a dead end — the caller was transferred for something the agent could otherwise handle
+ * end to end. Now the agent can CREATE the record, so the rules are about the ORDER it does that
+ * in, which is the part that decides whether the call feels like help or like an intake form.
+ *
+ * Reason first, details second. Four questions before the caller gets anything makes someone who
+ * only wanted to know if we service transmissions sit through a form; and if they hang up mid-form
+ * we've stored a half record for nothing. Their reason is also what tells us whether we need the
+ * car at all.
+ *
+ * The one thing NOT to say is "I see you're a new customer." We don't know that. An unrecognized
+ * number is equally a long-standing customer on a shared line, a blocked ID, or a new phone —
+ * and telling a ten-year customer they're new is both wrong and audibly wrong.
+ */
 const PRIVACY_RULE_ANON = [
-  "- IMPORTANT: You have NOT identified this caller. You don't know who they are, what they drive,",
-  "  or their service history. Never speculate about their vehicles or claim to look up their",
-  "  account — you cannot. Answer general questions about our services and hours.",
-  "- You CANNOT book for this caller: you have no record to attach it to. If they want an",
-  "  appointment, say the service team will take their details and get them scheduled, then",
-  "  transfer them. Do NOT collect their name, vehicle, or preferred time first — asking for",
-  "  details you can't act on wastes their time and sounds like a booking that isn't happening.",
-  "- If they ask what their car is due for, DON'T just transfer. Ask what they drive (make,",
-  "  model, year) and either the current mileage or roughly how long since the last service,",
-  "  then call check_service_due, tell them what's due, and offer to book them in. If they can't",
-  "  supply enough detail, transfer instead of guessing.",
-  "- Anything else needing their account or history: transfer them.",
+  "- IMPORTANT: this caller's number isn't on file, so you have NO record for them — no vehicles,",
+  "  no history. Never speculate about what they drive or claim to look them up. Do NOT tell them",
+  "  they're a new customer: the number may just be shared, blocked, or newly changed. If it comes",
+  "  up, say only that you don't see this number on file.",
+  "- Your opening line already asked for their name. Take whatever they give and move on — if they",
+  "  only give a first name, that's fine for now, don't interrogate them for a surname up front.",
+  "- THEN ASK WHAT THEY NEED, and handle it: lookup_services for what we offer, check_service_due",
+  "  for what a car is due for. Answer the question they actually called with FIRST.",
+  "- ONLY when it's relevant — they're booking, or you need it to answer — ask for the car's year,",
+  "  make, and model. Don't collect it just to have it.",
+  "- TO BOOK, you need their full name and the car. When they're ready to book: get their first and",
+  "  last name if you don't have it yet, then call register_customer with the name and the",
+  "  year/make/model. That creates their record. Then check_availability and book_service work",
+  "  exactly as they would for an existing customer.",
+  "- Offer the SOONEST slot first: call check_availability with NO date to get it. If that doesn't",
+  "  suit them, it also returns times further out, or ask what day they'd prefer.",
+  "- If they won't give a name or the car, don't push twice — log_handoff and transfer instead.",
+  "- Anything needing real history (past visits, a car in the shop, a bill): transfer them.",
 ].join("\n");
 
 /** Privacy rule for an identified caller. */
@@ -166,10 +188,12 @@ function identifiedBlock(ctx: InboundContext): string {
 
 function anonymousBlock(): string {
   return [
-    "CALLER: not identified (their number isn't in our system, or it's shared/blocked).",
-    "You can help with: what services we offer and what they involve, general guidance, and " +
-      "getting them to the right person. You cannot look up an account, a vehicle, or a history — " +
-      "for any of that, transfer them.",
+    "CALLER: not identified — their number isn't in our system, or it's shared/blocked. Treat " +
+      "them as someone we simply don't have on file, NOT as a confirmed new customer.",
+    "You CAN: say what we offer and what it involves, work out what a car is due for from what " +
+      "they tell you, take their name and car to create a record, and book them in.",
+    "You CANNOT: look up any past visit, service history, or a vehicle in the shop — you have no " +
+      "record to read. Transfer for any of that.",
   ].join("\n");
 }
 
@@ -317,5 +341,9 @@ export function buildInboundGreeting(ctx: InboundContext): string {
     }
     return `Hey ${first}, you've made it to the service center. How can I help you today?`;
   }
-  return `You've made it to the service center. How can I help you today?`;
+  // Unrecognized number: ask for the name in the greeting itself. It's the one thing we always
+  // need from a caller with no record, and asking up front means we're never mid-booking with
+  // nothing to attach it to. Note we do NOT say "I see you're new" — an unrecognized number is
+  // just as often a long-standing customer on a shared, blocked, or newly-changed line.
+  return `Welcome to ${ctx.companyName} service — who do I have the pleasure of speaking with today?`;
 }

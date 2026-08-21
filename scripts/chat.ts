@@ -178,19 +178,36 @@ async function sweepSimulated(sb: any) {
   const { data } = await sb.from("calls").select("id").like("vapi_call_id", "sim-%");
   const ids = (data ?? []).map((x: any) => x.id);
   if (!ids.length) { console.log("  no stranded simulated rows"); return; }
-  await sb.from("handoff_requests").delete().in("call_id", ids);
-  await sb.from("calls").delete().in("id", ids);
+  await deleteCallRows(sb, ids);
   console.log(`  removed ${ids.length} stranded simulated call row(s)`);
 }
 
-/** Remove the calls/handoff rows this simulation created so the dashboard stays truthful. */
+/** Remove the rows this simulation created so the dashboard stays truthful. */
 async function cleanup(sb: any, callId: string) {
   const { data } = await sb.from("calls").select("id").eq("vapi_call_id", callId);
   const ids = (data ?? []).map((x: any) => x.id);
-  if (ids.length) {
-    await sb.from("handoff_requests").delete().in("call_id", ids);
-    await sb.from("calls").delete().in("id", ids);
-  }
+  if (ids.length) await deleteCallRows(sb, ids);
+}
+
+/**
+ * Everything a simulated call can create, in FK order.
+ *
+ * Customers and vehicles matter here: testing the new-caller flow with `--anon` runs
+ * register_customer for real, and `created_on_call_id` is ON DELETE SET NULL — so deleting the
+ * call alone would leave a fake "Test Caller" sitting in the Customer Directory forever, which is
+ * exactly the pollution this cleanup exists to prevent. Deleting the customer cascades to their
+ * vehicles and appointments.
+ */
+async function deleteCallRows(sb: any, callIds: string[]) {
+  const { data: made } = await sb.from("customers").select("id").in("created_on_call_id", callIds);
+  const customerIds = (made ?? []).map((x: any) => x.id);
+
+  await sb.from("handoff_requests").delete().in("call_id", callIds);
+  // Vehicles added to a PRE-EXISTING customer during the call (register_customer on a caller who
+  // was already on file); the ones belonging to simulated customers go by cascade below.
+  await sb.from("vehicles").delete().in("created_on_call_id", callIds);
+  if (customerIds.length) await sb.from("customers").delete().in("id", customerIds);
+  await sb.from("calls").delete().in("id", callIds);
 }
 
 main().catch((e) => { console.error("failed:", e.message); process.exit(1); });

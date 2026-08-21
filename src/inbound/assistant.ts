@@ -100,6 +100,93 @@ function toolDefinitions(ctx: InboundContext) {
     });
   }
 
+  // INTAKE. Creating a customer mid-call is what turns an unrecognized number from a dead end
+  // into a booking: an appointment needs a record to attach to, and a new caller has none. Only
+  // offered when the caller ISN'T already identified — a known customer's record must never be
+  // rewritten from a name heard over the phone.
+  if (ctx.agentEnabled && !ctx.customerId) {
+    tools.push({
+      type: "function",
+      function: {
+        name: "register_customer",
+        description:
+          "Save a new caller so you can book for them. Needs their full name (first and last). " +
+          "Include year/make/model once you know the car — call again to add it later.",
+        parameters: {
+          type: "object",
+          properties: {
+            full_name: { type: "string", description: "First and last name, as they said it." },
+            make: { type: "string" },
+            model: { type: "string" },
+            year: { type: "number" },
+            mileage: { type: "number", description: "Current odometer, if they know it." },
+          },
+          required: ["full_name"],
+        },
+      },
+      server,
+    });
+  }
+
+  // BOOKING TOOLS — offered to identified callers AND to new callers, who become identified the
+  // moment register_customer runs. Vapi fixes the tool list when the call starts, so withholding
+  // these from an anonymous caller would leave the agent unable to book someone it had just
+  // registered. book_service still refuses server-side until a customer exists, so offering them
+  // early costs nothing.
+  if (ctx.agentEnabled) {
+    tools.push(
+      {
+        type: "function",
+        function: {
+          name: "check_availability",
+          description:
+            "Open appointment times. Omit `date` for the soonest opening (and the week ahead); " +
+            "pass a date, weekday, or 'tomorrow' for a specific day. Always call before offering " +
+            "a time.",
+          parameters: {
+            type: "object",
+            properties: {
+              date: {
+                type: "string",
+                description: "Optional. YYYY-MM-DD, a weekday name, or 'tomorrow'. " +
+                  "Leave it out to get the next available slot.",
+              },
+              days: { type: "number", description: "How many days ahead to scan; default 7." },
+              service_minutes: { type: "number", description: "Expected duration; default 45." },
+            },
+          },
+        },
+        server,
+      },
+      {
+        type: "function",
+        function: {
+          name: "book_service",
+          description:
+            "Capture an appointment request. Use the wording it returns.",
+          parameters: {
+            type: "object",
+            properties: {
+              preferred_time: { type: "string", description: "Day/time in their words." },
+              starts_at: {
+                type: "string",
+                description: "The exact slot as YYYY-MM-DDTHH:MM local, from check_availability. " +
+                  "Include it whenever you know the specific time — it reserves the slot.",
+              },
+              vehicle_id: { type: "string", description: "id from get_my_vehicles." },
+              service_ops: { type: "array", items: { type: "string" } },
+              drop_off: { type: "string", enum: ["waiting", "dropping_off"] },
+              notes: { type: "string" },
+              service_minutes: { type: "number", description: "Expected duration; default 45." },
+            },
+            required: ["preferred_time"],
+          },
+        },
+        server,
+      }
+    );
+  }
+
   // Recording the handoff works in both modes.
   tools.push(HANDOFF_TOOL(server));
 
@@ -144,24 +231,6 @@ function toolDefinitions(ctx: InboundContext) {
       {
         type: "function",
         function: {
-          name: "check_availability",
-          description:
-            "Open appointment times on a date. Use before offering a time so you only suggest " +
-            "slots the shop can take.",
-          parameters: {
-            type: "object",
-            properties: {
-              date: { type: "string", description: "YYYY-MM-DD, a weekday name ('friday'), or 'tomorrow'. Pass what the caller said — don't work out the date yourself." },
-              service_minutes: { type: "number", description: "Expected duration; default 45." },
-            },
-            required: ["date"],
-          },
-        },
-        server,
-      },
-      {
-        type: "function",
-        function: {
           name: "list_appointments",
           description:
             "The caller's upcoming appointments.",
@@ -186,31 +255,6 @@ function toolDefinitions(ctx: InboundContext) {
         },
         server,
       },
-      {
-        type: "function",
-        function: {
-          name: "book_service",
-          description:
-            "Capture an appointment request. Use the wording it returns.",
-          parameters: {
-            type: "object",
-            properties: {
-              preferred_time: { type: "string", description: "Day/time in their words." },
-              starts_at: {
-                type: "string",
-                description: "The exact slot as YYYY-MM-DDTHH:MM local, from check_availability. " +
-                  "Include it whenever you know the specific time — it reserves the slot.",
-              },
-              vehicle_id: { type: "string", description: "id from get_my_vehicles." },
-              service_ops: { type: "array", items: { type: "string" } },
-              drop_off: { type: "string", enum: ["waiting", "dropping_off"] },
-              notes: { type: "string" },
-            },
-            required: ["preferred_time"],
-          },
-        },
-        server,
-      }
     );
   }
 
