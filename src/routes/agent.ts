@@ -204,7 +204,9 @@ agentRoutes.get("/calls", async (c) => {
 
   let query = supabaseAdmin
     .from("calls")
-    .select("id, customer_id, vapi_call_id, from_number, duration_sec, outcome, recording_url, metadata, created_at, customers(full_name, phone)")
+    // Name the FK explicitly: customers.created_on_call_id points back at calls, so there are TWO
+    // relationships between these tables and an unqualified embed fails outright.
+    .select("id, customer_id, vapi_call_id, from_number, duration_sec, outcome, recording_url, metadata, created_at, customers!calls_customer_id_fkey(full_name, phone)")
     .eq("company_id", companyId).eq("direction", "inbound");
 
   if (q) {
@@ -219,7 +221,10 @@ agentRoutes.get("/calls", async (c) => {
     query = query.or(clauses.join(","));
   }
 
-  const { data } = await query.order("created_at", { ascending: false }).limit(200);
+  const { data, error } = await query.order("created_at", { ascending: false }).limit(200);
+  // Surface failures instead of rendering "No calls yet" — an empty list and a broken query
+  // look identical to the user, and this exact join error hid behind `data ?? []`.
+  if (error) return c.json({ error: error.message }, 500);
   const rows = data ?? [];
 
   // Handoff reason per call — what makes "handed off · pricing" possible.
@@ -487,7 +492,7 @@ agentRoutes.get("/calls/:id", async (c) => {
 
   const { data: call } = await supabaseAdmin
     .from("calls")
-    .select("id, customer_id, vapi_call_id, recording_url, recording_path, archive_status, duration_sec, outcome, created_at, metadata, customers(full_name, phone, email)")
+    .select("id, customer_id, vapi_call_id, recording_url, recording_path, archive_status, duration_sec, outcome, created_at, metadata, customers!calls_customer_id_fkey(full_name, phone, email)")
     .eq("id", id).eq("company_id", companyId).maybeSingle();
   if (!call) return c.json({ error: "not found" }, 404);
 

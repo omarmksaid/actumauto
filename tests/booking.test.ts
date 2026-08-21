@@ -290,3 +290,23 @@ test("the chat simulator records a call duration", () => {
   assert.ok(/duration_sec: seconds/.test(SRC), "finalize doesn't write duration_sec");
   assert.ok(/--keep/.test(SRC), "there's no way to keep a simulated call for dashboard testing");
 });
+
+test("calls->customers joins name the foreign key explicitly", () => {
+  // customers.created_on_call_id points back at calls, so there are TWO relationships between
+  // the tables. An unqualified embed fails with "more than one relationship was found" — the
+  // Calls page rendered "No calls yet" while 27 calls sat in the table.
+  const SRC = readFileSync("src/routes/agent.ts", "utf8");
+  const bad = SRC.match(/from\("calls"\)[\s\S]{0,400}?customers\((?!!)/g) ?? [];
+  assert.equal(bad.length, 0,
+    "an unqualified customers embed on calls will fail at runtime — use customers!calls_customer_id_fkey");
+});
+
+test("the calls endpoint surfaces query errors instead of returning an empty list", () => {
+  // `const { data } = ...; data ?? []` turned a hard failure into "No calls yet", which is
+  // indistinguishable from an empty table — that's what hid the broken join.
+  const SRC = readFileSync("src/routes/agent.ts", "utf8");
+  const fn = SRC.slice(SRC.indexOf('agentRoutes.get("/calls"'), SRC.indexOf('agentRoutes.get("/calendar"'));
+  assert.ok(/const \{ data, error \} = await query/.test(fn), "the calls query ignores its error");
+  assert.ok(/if \(error\) return c\.json\(\{ error: error\.message \}, 500\)/.test(fn),
+    "a failed calls query still renders as an empty list");
+});
