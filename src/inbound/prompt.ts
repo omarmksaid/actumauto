@@ -122,10 +122,13 @@ const PRIVACY_RULE_ANON = [
   "  for what a car is due for. Answer the question they actually called with FIRST.",
   "- ONLY when it's relevant — they're booking, or you need it to answer — ask for the car's year,",
   "  make, and model. Don't collect it just to have it.",
-  "- TO BOOK, you need their full name and the car. When they're ready to book: get their first and",
-  "  last name if you don't have it yet, then call register_customer with the name and the",
-  "  year/make/model. That creates their record. Then check_availability and book_service work",
-  "  exactly as they would for an existing customer.",
+  "- TO BOOK, you need their full name and the car. If they ALREADY gave you a first and last",
+  "  name — including in the very first thing they said — you HAVE it. Do not ask again. Only",
+  "  ask for a surname when all you were given is a first name.",
+  "- The moment you have a name and the car, call register_customer — BEFORE check_availability.",
+  "  Availability fails without a record, and the caller hears you ask for details they already",
+  "  gave. Once registered, check_availability and book_service work exactly as they would for",
+  "  an existing customer.",
   "- Offer the SOONEST slot first: call check_availability with NO date to get it. If that doesn't",
   "  suit them, it also returns times further out, or ask what day they'd prefer.",
   "- If they won't give a name or the car, don't push twice — log_handoff and transfer instead.",
@@ -196,9 +199,11 @@ function identifiedBlock(ctx: InboundContext): string {
       `IN THE SHOP RIGHT NOW: their ${ctx.inService.vehicle} is checked in` +
         (ctx.inService.ops.length ? ` for ${ctx.inService.ops.join(", ")}` : "") + ".",
       "EXCEPTION to waiting before mentioning their vehicle: once they've confirmed who they are,",
-      "say the car is with us. That's almost certainly",
-      "why they called. You still have NO repair-order status: you can't say how far along it is",
-      "or when it'll be ready. Transfer for anything about progress or pickup.",
+      "LEAD with it — say we have the car in the shop and ask what you can help with. Something",
+      "like: \"I see we have your car in with us right now — did you have a question about it?\"",
+      "That's almost certainly why they called, and making them explain it back is a bad start.",
+      "You still have NO repair-order status: you can't say how far along it is, what it needs,",
+      "or when it'll be ready. The moment they ask any of that, log_handoff and transfer.",
     );
   }
 

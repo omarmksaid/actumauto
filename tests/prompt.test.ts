@@ -119,3 +119,40 @@ test("a car already in the shop is an explicit exception to that rule", () => {
   assert.ok(/EXCEPTION to waiting before mentioning their vehicle/i.test(p),
     "the in-service case doesn't override the wait-to-mention rule");
 });
+
+test("a full name already given is not asked for again", () => {
+  // From a real call: the caller opened with "my name is Ahmad Said", and at booking time the
+  // agent asked "I have Ahmad — what's your last name?". The rule said "if you don't have it
+  // yet", which the model didn't apply to something said several turns earlier.
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "T", timezone: "America/Los_Angeles",
+    customerId: null, customerName: null, customerLanguage: null,
+    vehicles: [], offerings: [], transferNumber: null, greeting: null, personaTemplate: null,
+    identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 0,
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(/including in the very first thing they said/i.test(p),
+    "nothing tells the model a name given earlier still counts");
+  assert.ok(/BEFORE check_availability/.test(p),
+    "register_customer isn't required before availability, so the caller hits the FAILED path");
+});
+
+test("a car in the shop is announced up front, with an invitation to ask", () => {
+  // Someone whose car is being serviced is almost certainly calling about it. Waiting for them
+  // to explain that back is a bad opening when we already know from the caller ID.
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "T", timezone: "America/Los_Angeles",
+    customerId: "cu", customerName: "Omar Said", customerLanguage: null,
+    vehicles: [{ id: "v1", make: "Toyota", model: "RAV4", year: 2022, vin: null, mileage: 41000, due: null }],
+    offerings: [], transferNumber: "+14085550111", greeting: null, personaTemplate: null,
+    identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", matchCount: 1,
+    inService: { vehicle: "2022 Toyota RAV4", since: null, ops: ["Oil change"] },
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(/LEAD with it/.test(p), "the agent isn't told to raise the in-shop car first");
+  assert.ok(/did you have a question about it/i.test(p), "no invitation to ask about the car");
+  assert.ok(/log_handoff and transfer/.test(p),
+    "status questions about an in-shop car must still transfer");
+});
