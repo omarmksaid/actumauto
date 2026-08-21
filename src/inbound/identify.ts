@@ -14,6 +14,7 @@
 import { supabaseAdmin } from "../lib/supabase";
 import { computeDue, DueResult, VehicleForDue } from "../scheduling/due";
 import { loadIntervalsForVehicle } from "../scheduling/schedules";
+import { currentlyInService } from "../scheduling/slots";
 
 /** How far ahead we consider service "coming up" when recommending on an inbound call. */
 export const INBOUND_DUE_HORIZON_DAYS = 45;
@@ -51,6 +52,8 @@ export interface InboundContext {
   businessHours: Record<string, [string, string] | null>;
   /** Today, in the dealership's timezone — the agent can't resolve "tomorrow" without it. */
   todayLabel: string;
+  /** Set when this caller's vehicle is physically in the shop right now. */
+  inService: { vehicle: string; since: string | null; ops: string[] } | null;
   /** Diagnostics: how many customers matched the caller ID (0, 1, or >1 ⇒ ambiguous). */
   matchCount: number;
 }
@@ -103,6 +106,7 @@ export async function resolveInboundContext(
       weekday: "long", month: "long", day: "numeric", year: "numeric",
       timeZone: company?.timezone ?? "America/Los_Angeles",
     }),
+    inService: null,
     matchCount: Number(row.match_count ?? 0),
   };
 
@@ -120,6 +124,18 @@ export async function resolveInboundContext(
   ctx.customerName = customer.full_name;
   ctx.customerLanguage = customer.detected_language;
   ctx.vehicles = await loadVehiclesWithDue(companyId, customer.id, todayIso);
+
+  // Someone whose car is in the shop is almost certainly calling ABOUT that car. Knowing it
+  // up front means the agent leads with it instead of asking what they need.
+  const active = await currentlyInService(companyId, customer.id);
+  if (active) {
+    const v: any = (active as any).vehicles;
+    ctx.inService = {
+      vehicle: v ? `${v.year} ${v.make} ${v.model}` : "their vehicle",
+      since: (active as any).checked_in_at ?? null,
+      ops: ((active as any).service_ops?.ops ?? []) as string[],
+    };
+  }
 
   return ctx;
 }

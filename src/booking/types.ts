@@ -24,6 +24,9 @@ export interface CreateAppointmentInput {
   serviceOps: string[];
   /** Whether they're staying on site. Decides how the shop schedules the work. */
   dropOff?: "waiting" | "dropping_off" | "unknown";
+  /** Resolved slot. Null when the caller only gave a vague preference. */
+  startsAt?: Date | null;
+  durationMin?: number;
   notes: string;            // includes the AA:<appointment_id> tag for the shown-RO loop (§6b)
 }
 

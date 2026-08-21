@@ -23,6 +23,49 @@ import { supabaseAdmin } from "../lib/supabase";
 import { env } from "../lib/env";
 import { resolveInboundContext, loadVehiclesWithDue, InboundContext, INBOUND_DUE_HORIZON_DAYS } from "../inbound/identify";
 import { computeDue } from "../scheduling/due";
+import { loadShopConfig, availableSlots, checkSlot, openWindow, currentlyInService, spokenTime } from "../scheduling/slots";
+
+/**
+ * Resolve "friday" / "tomorrow" / "2026-08-22" to a local YYYY-MM-DD in the shop's timezone.
+ * Weekday names always mean the NEXT occurrence, which is what a caller means by "Friday".
+ */
+function resolveDate(input: string, tz: string): string | null {
+  const raw = input.toLowerCase().trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+  const local = (d: Date) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" })
+      .format(d);
+  const dayIndex = (d: Date) =>
+    ["sun", "mon", "tue", "wed", "thu", "fri", "sat"].indexOf(
+      new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(d).toLowerCase().slice(0, 3));
+
+  const now = new Date();
+  if (/^today$/.test(raw)) return local(now);
+  if (/^tomorrow$/.test(raw)) return local(new Date(now.getTime() + 86400_000));
+
+  const NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const want = NAMES.findIndex((n) => raw.includes(n.slice(0, 3)) && raw.length <= 14);
+  if (want >= 0) {
+    for (let i = 1; i <= 7; i++) {
+      const cand = new Date(now.getTime() + i * 86400_000);
+      if (dayIndex(cand) === want) return local(cand);
+    }
+  }
+  return null;
+}
+
+/** Parse "2026-08-22T10:00" as local time in the given zone, not the server's. */
+function localTimeToInstant(raw: string, tz: string): Date {
+  const naive = new Date(`${raw.replace(" ", "T")}${raw.length <= 16 ? ":00" : ""}Z`);
+  if (isNaN(naive.getTime())) return naive;
+  const shown = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(naive).reduce((a: any, p) => (a[p.type] = p.value, a), {});
+  const wantMin = naive.getUTCHours() * 60 + naive.getUTCMinutes();
+  const gotMin = (Number(shown.hour) % 24) * 60 + Number(shown.minute);
+  return new Date(naive.getTime() - (gotMin - wantMin) * 60_000);
+}
 import { loadIntervalsForVehicle } from "../scheduling/schedules";
 import { buildInboundAssistant } from "../inbound/assistant";
 import { getBookingProvider } from "../booking";
@@ -115,7 +158,16 @@ inboundRoutes.post("/tools", async (c) => {
 interface PinnedCall {
   callId: string;
   companyId: string;
-  customerId: string | null;   // null ⇒ anonymous: customer tools MUST refuse
+  /**
+   * null ⇒ anonymous: customer tools MUST refuse.
+   *
+   * Mutable, because register_customer can fill it mid-call. Vapi may send several tool calls in
+   * ONE request, which resolves `pinned` a single time — so if register_customer and book_service
+   * arrive together, writing back to the DB alone would leave book_service holding a stale null
+   * and refusing the booking it was just given a customer for. Assigning here fixes the whole
+   * batch; the DB write covers every later request.
+   */
+  customerId: string | null;
   callerNumber: string | null;
 }
 
@@ -125,7 +177,9 @@ async function runTool(name: string, args: any, pinned: PinnedCall): Promise<str
     case "get_my_vehicles":   return await getMyVehicles(pinned);
     case "get_due_service":   return await getDueService(pinned);
     case "check_service_due":  return await checkServiceDue(args, pinned);
+    case "register_customer":  return await registerCustomer(args, pinned);
     case "book_service":      return await bookService(args, pinned);
+    case "check_availability": return await checkAvailability(args, pinned);
     case "list_appointments":  return await listAppointments(pinned);
     case "cancel_appointment": return await cancelAppointment(args, pinned);
     case "log_handoff":         return await logHandoff(args, pinned);
@@ -389,16 +443,147 @@ async function checkServiceDue(args: any, pinned: PinnedCall): Promise<string> {
     `. Tell them what's due, then ask if they'd like you to book them in.`;
 }
 
+/**
+ * Create a customer (and optionally their vehicle) from what a new caller tells us, then adopt
+ * that identity for the rest of the call.
+ *
+ * This is the one tool that takes personal data from the model, because there is no other source:
+ * an unrecognized caller ID means nothing on file to read. So everything it writes is treated as
+ * UNVERIFIED — a spoken name heard over a phone line is a guess at a spelling, and the caller
+ * could be a wrong number. `created_on_call_id` marks the provenance so the dealership can tell
+ * these apart from records it imported and vouches for.
+ *
+ * It is idempotent per call: calling it twice updates the row it already made rather than
+ * creating a second one, because a model that re-confirms a name should not fork the customer.
+ */
+async function registerCustomer(args: any, pinned: PinnedCall): Promise<string> {
+  const fullName = String(args.full_name ?? "").trim().replace(/\s+/g, " ");
+  // A single token is usually the agent jumping the gun on "who am I speaking with" — it heard
+  // "Omar" and called immediately. Ask for the surname rather than storing a half record.
+  if (!fullName || !/\s/.test(fullName)) {
+    return "Ask for their full name — first AND last — before calling this.";
+  }
+
+  // Already identified: either a known caller (never call this) or intake already ran.
+  if (pinned.customerId) {
+    const { data: existing } = await supabaseAdmin
+      .from("customers").select("id, created_on_call_id")
+      .eq("id", pinned.customerId).maybeSingle();
+
+    // A CSV-imported customer must never be renamed by something heard on a call.
+    if (existing && existing.created_on_call_id !== pinned.callId) {
+      return "This caller is already on file — don't overwrite their record. " +
+        "Use their existing details, and transfer them if something looks wrong.";
+    }
+    await supabaseAdmin.from("customers")
+      .update({ full_name: fullName, updated_at: new Date().toISOString() })
+      .eq("id", pinned.customerId).eq("created_on_call_id", pinned.callId);
+    return await attachVehicle(args, pinned, fullName, "updated");
+  }
+
+  const { data: created, error } = await supabaseAdmin.from("customers").insert({
+    company_id: pinned.companyId,
+    full_name: fullName,
+    phone: pinned.callerNumber,          // the number they're calling from, NOT one the model states
+    customer_type: "new",
+    created_on_call_id: pinned.callId,
+    notes: "Created by the phone assistant during an inbound call — details unverified.",
+  }).select("id").single();
+
+  if (error || !created) {
+    console.error("[inbound] register_customer failed:", error?.message);
+    return "Couldn't save their details. Offer to transfer them to the service team.";
+  }
+
+  // Adopt the new identity: write it to the pinned call row (authority for later requests) AND
+  // to the in-memory object (so the rest of THIS batch can already book).
+  await supabaseAdmin.from("calls")
+    .update({ customer_id: created.id }).eq("id", pinned.callId);
+  pinned.customerId = created.id;
+
+  return await attachVehicle(args, pinned, fullName, "created");
+}
+
+/**
+ * Store the caller's vehicle, if they gave us one. Split out so register_customer can be called
+ * again later in the call — reason first, car once it's relevant — without duplicating either row.
+ */
+async function attachVehicle(
+  args: any, pinned: PinnedCall, fullName: string, mode: "created" | "updated"
+): Promise<string> {
+  const make = String(args.make ?? "").trim();
+  const model = String(args.model ?? "").trim();
+  const year = Number(args.year);
+  const first = fullName.split(" ")[0];
+
+  if (!make || !model || !year) {
+    return `Saved ${fullName}. When it's relevant, ask what they drive — year, make, and model — ` +
+      `and call this again with those to add the car.`;
+  }
+
+  const mileage = args.mileage != null && Number(args.mileage) > 0 ? Number(args.mileage) : null;
+
+  // Don't duplicate the car if intake runs twice on one call.
+  const { data: already } = await supabaseAdmin
+    .from("vehicles").select("id")
+    .eq("customer_id", pinned.customerId!)
+    .eq("make", make).eq("model", model).eq("year", year)
+    .maybeSingle();
+
+  if (already) {
+    return `Already have the ${year} ${make} ${model} on ${first}'s record. Carry on.`;
+  }
+
+  const { error } = await supabaseAdmin.from("vehicles").insert({
+    company_id: pinned.companyId,
+    customer_id: pinned.customerId,
+    make, model, year,
+    mileage,
+    mileage_as_of: mileage != null ? todayIso() : null,
+    created_on_call_id: pinned.callId,
+  });
+
+  if (error) {
+    console.error("[inbound] vehicle insert failed:", error.message);
+    return `Saved ${fullName}, but couldn't save the vehicle. Carry on without it — ` +
+      `an advisor can add the car when they confirm.`;
+  }
+
+  return `Saved ${fullName} and their ${year} ${make} ${model}. You can now check availability ` +
+    `and book for them. Don't re-read their details back — just carry on.`;
+}
+
 async function bookService(args: any, pinned: PinnedCall): Promise<string> {
   if (!pinned.customerId) return ANON_REFUSAL;
 
   const preferredTime = String(args.preferred_time ?? "").trim();
   if (!preferredTime) return "Ask the caller what day and time works for them first.";
 
+  // A resolved slot reserves real time; free text alone can't be checked for conflicts.
+  const cfg = await loadShopConfig(pinned.companyId);
+  let startsAt: Date | null = null;
+  if (args.starts_at) {
+    const raw = String(args.starts_at).trim();
+    // Interpret a bare local timestamp in the SHOP's timezone, not the server's.
+    const parsed = /Z|[+-]\d{2}:\d{2}$/.test(raw)
+      ? new Date(raw)
+      : localTimeToInstant(raw, cfg.timezone);
+    if (!isNaN(parsed.getTime())) {
+      const durationMin = Number(args.service_minutes) > 0 ? Number(args.service_minutes) : 45;
+      const verdict = await checkSlot(pinned.companyId, cfg, parsed, durationMin);
+      if (!verdict.ok) {
+        return `Can't book that — ${verdict.reason}. Call check_availability and offer a real time.`;
+      }
+      startsAt = parsed;
+    }
+  }
+
   // Hours are also in the prompt, but a prompt rule is guidance, not a guarantee: capturing
   // "tomorrow at 9 PM" for a shop that shuts at 6 creates a promise someone has to walk back.
-  const outOfHours = await checkHours(pinned.companyId, preferredTime);
-  if (outOfHours) return outOfHours;
+  if (!startsAt) {
+    const outOfHours = await checkHours(pinned.companyId, preferredTime);
+    if (outOfHours) return outOfHours;
+  }
 
   // vehicle_id is the ONLY id we accept from the model — so validate it belongs to this caller.
   let vehicleId: string | null = null;
@@ -421,11 +606,39 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
     preferredTime,
     serviceOps: Array.isArray(args.service_ops) ? args.service_ops.map(String) : [],
     dropOff: ["waiting", "dropping_off"].includes(args.drop_off) ? args.drop_off : "unknown",
+    startsAt,
+    durationMin: Number(args.service_minutes) > 0 ? Number(args.service_minutes) : 45,
     notes: [String(args.notes ?? "").trim(), "(booked on inbound call)"].filter(Boolean).join(" "),
   });
 
   // Mode-gated wording: in soft mode this promises a confirmation, never a firm slot (§2).
   return result.confirmationText;
+}
+
+/** Open times on a date, so the agent only ever offers slots the shop can actually take. */
+async function checkAvailability(args: any, pinned: PinnedCall): Promise<string> {
+  const cfg = await loadShopConfig(pinned.companyId);
+
+  // Accept a weekday name or "tomorrow" as well as a date. The model reliably knows what the
+  // caller SAID but miscounts which date that is — it offered "Saturday the 23rd" when the 23rd
+  // was a Sunday. Resolving here removes a whole class of confidently-wrong answers.
+  const date = resolveDate(String(args.date ?? "").trim(), cfg.timezone);
+  if (!date) return "Couldn't read that date — pass YYYY-MM-DD, a weekday name, or 'tomorrow'.";
+  const mins = Number(args.service_minutes) > 0 ? Number(args.service_minutes) : 45;
+  const slots = await availableSlots(pinned.companyId, cfg, date, mins, 6);
+
+  const dayName = new Intl.DateTimeFormat("en-US", { timeZone: cfg.timezone, weekday: "long", month: "short", day: "numeric" })
+    .format(new Date(`${date}T12:00:00Z`));
+
+  if (!slots.length) {
+    return openWindow(cfg, date)
+      ? `Nothing open ${dayName} — we're full. Offer another date.`
+      : `We're closed ${dayName}. Name a day we ARE open and let them choose.`;
+  }
+  // Two or three read naturally aloud; a list of six does not.
+  return `${dayName} — open: ${slots.slice(0, 3).map((s) => s.label).join(", ")}` +
+    (slots.length > 3 ? ` (and ${slots.length - 3} more)` : "") +
+    `. Offer two or three, not the whole list.`;
 }
 
 /** The caller's upcoming visits, so they can ask about, change, or cancel one. */

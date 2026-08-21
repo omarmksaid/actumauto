@@ -29,6 +29,10 @@ export const softBooking: BookingProvider = {
       preferred_time: input.preferredTime,
       service_ops: { ops: input.serviceOps },
       drop_off: input.dropOff ?? "unknown",
+      starts_at: input.startsAt?.toISOString() ?? null,
+      ends_at: input.startsAt
+        ? new Date(input.startsAt.getTime() + (input.durationMin ?? 45) * 60_000).toISOString()
+        : null,
       notes: input.notes,
       status: "pending_confirmation",
     }).select("id").single();

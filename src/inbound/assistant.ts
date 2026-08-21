@@ -144,6 +144,24 @@ function toolDefinitions(ctx: InboundContext) {
       {
         type: "function",
         function: {
+          name: "check_availability",
+          description:
+            "Open appointment times on a date. Use before offering a time so you only suggest " +
+            "slots the shop can take.",
+          parameters: {
+            type: "object",
+            properties: {
+              date: { type: "string", description: "YYYY-MM-DD, a weekday name ('friday'), or 'tomorrow'. Pass what the caller said — don't work out the date yourself." },
+              service_minutes: { type: "number", description: "Expected duration; default 45." },
+            },
+            required: ["date"],
+          },
+        },
+        server,
+      },
+      {
+        type: "function",
+        function: {
           name: "list_appointments",
           description:
             "The caller's upcoming appointments.",
@@ -178,6 +196,11 @@ function toolDefinitions(ctx: InboundContext) {
             type: "object",
             properties: {
               preferred_time: { type: "string", description: "Day/time in their words." },
+              starts_at: {
+                type: "string",
+                description: "The exact slot as YYYY-MM-DDTHH:MM local, from check_availability. " +
+                  "Include it whenever you know the specific time — it reserves the slot.",
+              },
               vehicle_id: { type: "string", description: "id from get_my_vehicles." },
               service_ops: { type: "array", items: { type: "string" } },
               drop_off: { type: "string", enum: ["waiting", "dropping_off"] },

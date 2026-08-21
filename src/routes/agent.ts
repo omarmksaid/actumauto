@@ -265,6 +265,91 @@ agentRoutes.get("/calls", async (c) => {
   return c.json({ calls: collapsed, counts });
 });
 
+// ── Appointment calendar ────────────────────────────────────────────────────
+// Day view for the shop. Appointments with a resolved starts_at are placed on the timeline;
+// ones captured as free text ("Friday morning") are returned separately as unscheduled, because
+// silently dropping them would hide real bookings an advisor still has to place.
+agentRoutes.get("/calendar", async (c) => {
+  const companyId = cid(c);
+  const date = (c.req.query("date") ?? "").trim();
+
+  const { data: co } = await supabaseAdmin
+    .from("companies").select("timezone, business_hours, concurrent_capacity")
+    .eq("id", companyId).maybeSingle();
+  const tz = co?.timezone || "America/Los_Angeles";
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" })
+    .format(new Date());
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : today;
+
+  // Wide UTC bounds; the exact local window is applied when grouping.
+  const from = new Date(`${day}T00:00:00Z`); from.setUTCHours(from.getUTCHours() - 14);
+  const to = new Date(`${day}T23:59:59Z`); to.setUTCHours(to.getUTCHours() + 14);
+
+  const COLS = "id, starts_at, ends_at, status, preferred_time, service_ops, drop_off, checked_in_at, customer_id, customers(full_name, phone), vehicles(year, make, model)";
+
+  const [{ data: timed }, { data: untimed }] = await Promise.all([
+    supabaseAdmin.from("appointments").select(COLS)
+      .eq("company_id", companyId).not("status", "in", "(canceled)")
+      .gte("starts_at", from.toISOString()).lte("starts_at", to.toISOString())
+      .order("starts_at", { ascending: true }),
+    // Separate query: a range filter on starts_at excludes NULLs, which would hide exactly the
+    // appointments that still need a human to place them.
+    supabaseAdmin.from("appointments").select(COLS)
+      .eq("company_id", companyId).in("status", ["pending_confirmation", "confirmed"])
+      .is("starts_at", null).order("created_at", { ascending: true }).limit(50),
+  ]);
+  const appts = [...(timed ?? []), ...(untimed ?? [])];
+
+  const localDay = (iso: string) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" })
+      .format(new Date(iso));
+
+  const rows = (appts ?? []).map((a: any) => ({
+    id: a.id,
+    starts_at: a.starts_at,
+    ends_at: a.ends_at,
+    status: a.status,
+    preferred_time: a.preferred_time,
+    drop_off: a.drop_off,
+    checked_in_at: a.checked_in_at,
+    customer_id: a.customer_id,
+    customer: a.customers?.full_name ?? null,
+    phone: a.customers?.phone ?? null,
+    vehicle: a.vehicles ? `${a.vehicles.year} ${a.vehicles.make} ${a.vehicles.model}` : null,
+    ops: a.service_ops?.ops ?? [],
+  }));
+
+  return c.json({
+    date: day,
+    timezone: tz,
+    capacity: co?.concurrent_capacity ?? 4,
+    hours: (co?.business_hours ?? {}) as any,
+    scheduled: rows.filter((r) => r.starts_at && localDay(r.starts_at) === day),
+    // Requests with no resolved time — an advisor still has to place these.
+    unscheduled: rows.filter((r) => !r.starts_at),
+  });
+});
+
+/** Advisor actions: check a vehicle in, or mark the work complete. */
+agentRoutes.patch("/appointments/:id", async (c) => {
+  const companyId = cid(c);
+  const b = await c.req.json<any>().catch(() => ({}));
+  const patch: any = {};
+
+  if (b.action === "check_in") { patch.status = "in_service"; patch.checked_in_at = new Date().toISOString(); }
+  else if (b.action === "complete") { patch.status = "shown"; patch.completed_at = new Date().toISOString(); patch.shown_at = new Date().toISOString(); }
+  else if (b.action === "confirm") { patch.status = "confirmed"; }
+  else if (b.action === "cancel") { patch.status = "canceled"; patch.canceled_at = new Date().toISOString(); }
+  else if (b.action === "no_show") { patch.status = "no_show"; }
+  else return c.json({ error: "unknown action" }, 422);
+
+  const { data, error } = await supabaseAdmin.from("appointments")
+    .update(patch).eq("id", c.req.param("id")).eq("company_id", companyId).select("*").maybeSingle();
+  if (error) return c.json({ error: error.message }, 400);
+  if (!data) return c.json({ error: "not found" }, 404);
+  return c.json({ appointment: data });
+});
+
 // ── Recording archive health ────────────────────────────────────────────────
 // Surfaced because the dangerous failure is a SILENT one: believing you have audio you don't.
 agentRoutes.get("/archive/status", async (c) => {

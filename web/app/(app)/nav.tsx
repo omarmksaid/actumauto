@@ -9,6 +9,7 @@ import { apiCall } from "@/lib/api";
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/calls", label: "Calls" },
+  { href: "/calendar", label: "Calendar" },
   { href: "/handoffs", label: "Handoffs" },
   { href: "/directory", label: "Customer Directory" },
   { href: "/imports", label: "Imports" },

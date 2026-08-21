@@ -141,6 +141,16 @@ function identifiedBlock(ctx: InboundContext): string {
     lines.push("We have no vehicles on file for them. Don't guess — offer to transfer them.");
   }
 
+  if (ctx.inService) {
+    lines.push(
+      "",
+      `IN THE SHOP RIGHT NOW: their ${ctx.inService.vehicle} is checked in` +
+        (ctx.inService.ops.length ? ` for ${ctx.inService.ops.join(", ")}` : "") + ".",
+      "You still have NO repair-order status — you can't say how far along it is or when it'll be",
+      "ready. Acknowledge the car is here, then transfer for anything about progress or pickup.",
+    );
+  }
+
   const anyDue = ctx.vehicles.some((v) => v.due);
   if (anyDue) {
     lines.push(
@@ -299,6 +309,12 @@ export function buildInboundGreeting(ctx: InboundContext): string {
   // the car in its prompt and can raise it once their actual reason is handled.
   if (ctx.customerId && ctx.customerName) {
     const first = ctx.customerName.split(" ")[0];
+    // Their car is here right now — say so. They're almost certainly calling about it, and
+    // making them explain is the thing that annoys people about service lines.
+    if (ctx.inService) {
+      return `Hey ${first}, you've made it to the service center. I can see your ` +
+        `${ctx.inService.vehicle} is with us today — any questions about it?`;
+    }
     return `Hey ${first}, you've made it to the service center. How can I help you today?`;
   }
   return `You've made it to the service center. How can I help you today?`;

@@ -226,3 +226,24 @@ export const demoSchedules: ScheduleRow[] = [
     ],
   },
 ];
+
+// ── Calendar ──  apiCall("/agent/calendar")
+export const demoCalendar = {
+  date: new Date().toISOString().slice(0, 10),
+  timezone: "America/Los_Angeles",
+  capacity: 4,
+  hours: {},
+  scheduled: [
+    { id: "a1", starts_at: new Date(new Date().setHours(9, 0, 0, 0)).toISOString(), ends_at: null,
+      status: "in_service", preferred_time: null, drop_off: "dropping_off", checked_in_at: new Date().toISOString(),
+      customer: "Maria Chen", phone: "+14085550142", vehicle: "2022 Toyota RAV4", ops: ["Oil & filter change"] },
+    { id: "a2", starts_at: new Date(new Date().setHours(10, 30, 0, 0)).toISOString(), ends_at: null,
+      status: "confirmed", preferred_time: null, drop_off: "waiting", checked_in_at: null,
+      customer: "Devon Park", phone: "+14085550199", vehicle: "2020 Toyota Camry", ops: ["Brake pad replacement"] },
+  ],
+  unscheduled: [
+    { id: "a3", starts_at: null, ends_at: null, status: "pending_confirmation",
+      preferred_time: "Friday morning", drop_off: "unknown", checked_in_at: null,
+      customer: "Priya Nair", phone: "+14085550188", vehicle: "2019 Toyota Sienna", ops: ["Tire rotation & balance"] },
+  ],
+};
