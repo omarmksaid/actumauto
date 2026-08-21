@@ -348,6 +348,17 @@ function resolveVoice(voice: { provider: string; voice_id: string }) {
 export function buildInboundAssistant(ctx: InboundContext, voice: { provider: string; voice_id: string }) {
   const bookingMode = getBookingProvider().mode;
 
+  // KILL SWITCH: forward the call and say nothing.
+  //
+  // This used to greet, run an LLM turn, call log_handoff, then transferCall — so the caller
+  // heard "let me get you to our team right away" and waited through a model round-trip before
+  // anything moved. With the agent switched off there is nothing for a model to decide: the
+  // only correct action is to hand the call to a person. Vapi's forwardingPhoneNumber does that
+  // at the telephony layer, with no assistant, no greeting, and no tokens spent.
+  if (!ctx.agentEnabled && ctx.transferNumber) {
+    return { forwardingPhoneNumber: ctx.transferNumber } as any;
+  }
+
   return {
     name: `${ctx.companyName} — inbound service`,
     firstMessage: buildInboundGreeting(ctx),
@@ -358,12 +369,10 @@ export function buildInboundAssistant(ctx: InboundContext, voice: { provider: st
       tools: toolDefinitions(ctx),
     },
     voice: resolveVoice(voice),
-    // nova-2-phonecall is tuned for 8kHz telephony and is materially faster than the multilingual
-    // model, which was costing ~900ms per turn. `smartFormat` cleans up numbers and times, which
-    // matters here because callers say "9 AM" and "628-358-7659".
     // nova-3 handles proper nouns markedly better than nova-2-phonecall, which mangled a caller
-    // spelling out "Aya Elarid" into "Alarid Elirid". A name is the one field we cannot guess
-    // from context and the one an advisor needs right — worth the small latency difference.
+    // spelling out a surname letter by letter. A name is the one field we cannot guess from
+    // context and the one an advisor needs right — worth the small latency difference.
+    // `smartFormat` cleans up numbers and times, which matters because callers say "9 AM".
     transcriber: {
       provider: "deepgram",
       model: "nova-3",

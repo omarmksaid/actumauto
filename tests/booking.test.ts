@@ -345,3 +345,27 @@ test("every function tool suppresses Vapi's spoken filler", () => {
   assert.ok(/\.\.\.HANDOFF_TOOL\(server\), messages: quiet/.test(SRC),
     "log_handoff is built separately and still narrates");
 });
+
+test("the kill switch forwards the call without speaking or running a model", () => {
+  // With the agent off it used to greet ("let me get you to our team right away"), run an LLM
+  // turn, call log_handoff, then transferCall — a spoken line and a model round-trip before the
+  // call moved. Switched off, there is nothing for a model to decide.
+  const SRC = readFileSync("src/inbound/assistant.ts", "utf8");
+  const fn = SRC.slice(SRC.indexOf("export function buildInboundAssistant"));
+  assert.ok(/if \(!ctx\.agentEnabled && ctx\.transferNumber\)/.test(fn),
+    "the kill switch doesn't short-circuit to a forward");
+  assert.ok(/return \{ forwardingPhoneNumber: ctx\.transferNumber \}/.test(fn),
+    "it doesn't use Vapi's telephony-level forward");
+  // The early return must come BEFORE the assistant is built, or it still costs a model turn.
+  assert.ok(fn.indexOf("forwardingPhoneNumber") < fn.indexOf("firstMessage"),
+    "the forward happens after the assistant is assembled");
+});
+
+test("with no transfer number the kill switch still answers rather than dead-airing", () => {
+  // Forwarding needs somewhere to forward TO. With none configured, silence is worse than a
+  // spoken handoff, so the old path has to remain reachable.
+  const SRC = readFileSync("src/inbound/assistant.ts", "utf8");
+  const fn = SRC.slice(SRC.indexOf("export function buildInboundAssistant"));
+  assert.ok(/&& ctx\.transferNumber/.test(fn),
+    "the forward isn't guarded on a transfer number existing");
+});
