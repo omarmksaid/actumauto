@@ -280,3 +280,13 @@ test("in-service appointments have their own funnel stage", () => {
   const UI = readFileSync("web/app/(app)/dashboard/page.tsx", "utf8");
   assert.ok(/label="In service"/.test(UI), "the funnel UI has no in-service stage");
 });
+
+test("the chat simulator records a call duration", () => {
+  // duration_sec is written by Vapi's end-of-call webhook, which the simulator never sends — so
+  // simulated calls had a null duration and were invisible to "Avg call length" and to anything
+  // counting answered calls.
+  const SRC = readFileSync("scripts/chat.ts", "utf8");
+  assert.ok(/async function finalize/.test(SRC), "the simulator never stamps a duration");
+  assert.ok(/duration_sec: seconds/.test(SRC), "finalize doesn't write duration_sec");
+  assert.ok(/--keep/.test(SRC), "there's no way to keep a simulated call for dashboard testing");
+});

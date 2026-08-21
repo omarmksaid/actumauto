@@ -5,6 +5,7 @@
  *   npx tsx scripts/chat.ts --anon          # as an unrecognized caller
  *   npx tsx scripts/chat.ts --from +1408…   # as a specific number
  *   npx tsx scripts/chat.ts --prompt        # print the system prompt and exit
+ *   npx tsx scripts/chat.ts --keep          # keep the call row (with duration) for dashboards
  *
  * Uses the SAME /inbound/assistant + /inbound/tools endpoints Vapi calls, so what you see here
  * is what a caller gets — minus speech. Tool calls are executed for real and printed, so you can
@@ -47,6 +48,9 @@ async function main() {
   const anon = args.includes("--anon");
   const doCleanup = args.includes("--cleanup");
   const promptOnly = args.includes("--prompt");
+  // Keep the call row so it shows up on the dashboard (with a real duration) instead of being
+  // deleted on exit. Without this, testing metrics means hand-editing the database.
+  const keep = args.includes("--keep");
   const fromFlag = args.indexOf("--from");
 
   const sb = createClient((process.env.SUPABASE_URL ?? "").replace(/\/+$/, ""),
@@ -83,6 +87,7 @@ async function main() {
   // crash) can strand rows, and an untagged row is indistinguishable from a real call in the
   // dashboard. `--cleanup` sweeps any strays.
   const callId = `sim-${Date.now()}`;
+  const startedAt = Date.now();
   const { assistant } = await post("/inbound/assistant", {
     message: { type: "assistant-request",
       call: { id: callId, phoneNumber: { number: num.e164 }, customer: { number: from } } },
@@ -175,8 +180,13 @@ async function main() {
     }
   }
   rl.close();
-  await cleanup(sb, callId);
-  console.log("\n  (simulated call row cleaned up)");
+  const secs = await finalize(sb, callId, startedAt);
+  if (keep) {
+    console.log(`\n  (call kept — ${secs}s, visible on the dashboard)`);
+  } else {
+    await cleanup(sb, callId);
+    console.log("\n  (simulated call row cleaned up)");
+  }
 }
 
 /** Delete every stranded simulated call (from runs killed before cleanup). */
@@ -189,6 +199,21 @@ async function sweepSimulated(sb: any) {
 }
 
 /** Remove the rows this simulation created so the dashboard stays truthful. */
+/**
+ * Stamp the simulated call as completed.
+ *
+ * duration_sec is normally written by Vapi's end-of-call webhook, which this simulator never
+ * sends — so simulated calls had a null duration and were invisible to "Avg call length" and to
+ * anything counting answered calls. Use --keep to leave the row behind for dashboard testing.
+ */
+async function finalize(sb: any, callId: string, startedAt: number) {
+  const seconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+  await sb.from("calls")
+    .update({ duration_sec: seconds, metadata: { endedReason: "customer-ended-call", simulated: true } })
+    .eq("vapi_call_id", callId);
+  return seconds;
+}
+
 async function cleanup(sb: any, callId: string) {
   const { data } = await sb.from("calls").select("id").eq("vapi_call_id", callId);
   const ids = (data ?? []).map((x: any) => x.id);
