@@ -285,7 +285,7 @@ agentRoutes.get("/calendar", async (c) => {
   const from = new Date(`${day}T00:00:00Z`); from.setUTCHours(from.getUTCHours() - 14);
   const to = new Date(`${day}T23:59:59Z`); to.setUTCHours(to.getUTCHours() + 14);
 
-  const COLS = "id, starts_at, ends_at, status, preferred_time, service_ops, drop_off, checked_in_at, customer_id, customers(full_name, phone), vehicles(year, make, model)";
+  const COLS = "id, starts_at, ends_at, status, preferred_time, service_ops, drop_off, checked_in_at, notes, customer_id, customers(full_name, phone), vehicles(year, make, model)";
 
   const [{ data: timed }, { data: untimed }] = await Promise.all([
     supabaseAdmin.from("appointments").select(COLS)
@@ -312,6 +312,7 @@ agentRoutes.get("/calendar", async (c) => {
     preferred_time: a.preferred_time,
     drop_off: a.drop_off,
     checked_in_at: a.checked_in_at,
+    notes: a.notes,
     customer_id: a.customer_id,
     customer: a.customers?.full_name ?? null,
     phone: a.customers?.phone ?? null,

@@ -55,6 +55,29 @@ function resolveDate(input: string, tz: string): string | null {
   return null;
 }
 
+/**
+ * What an advisor reads on the appointment row. They're placing this in myKaarma without
+ * listening to the call, so it has to answer: who, which car, what work, waiting or dropping off.
+ */
+function buildAppointmentNote(a: {
+  customerName: string; phone: string | null; vehicle: string | null; vehicleOnFile: boolean;
+  ops: string[]; dropOff: string; when: string; agentNotes: string;
+}): string {
+  const lines = [
+    `${a.customerName}${a.phone ? ` (${a.phone})` : ""} — booked by phone`,
+    a.vehicle
+      ? `Vehicle: ${a.vehicle}${a.vehicleOnFile ? "" : " — NOT ON FILE, add it"}`
+      : "Vehicle: not specified",
+    `Requested: ${a.ops.length ? a.ops.join(", ") : "service not specified"}`,
+    `When: ${a.when}`,
+    a.dropOff === "waiting" ? "Customer will WAIT on site"
+      : a.dropOff === "dropping_off" ? "Customer is dropping off"
+      : "Waiting vs drop-off: not asked",
+  ];
+  if (a.agentNotes) lines.push(`Notes: ${a.agentNotes}`);
+  return lines.join("\n");
+}
+
 /** Parse "2026-08-22T10:00" as local time in the given zone, not the server's. */
 function localTimeToInstant(raw: string, tz: string): Date {
   const naive = new Date(`${raw.replace(" ", "T")}${raw.length <= 16 ? ":00" : ""}Z`);
@@ -635,6 +658,12 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
     return "FAILED — more than one vehicle on file. Do NOT say it's booked. Ask which car, then book with its id.";
   }
 
+  const chosen = vehicleId ? vehicles.find((v) => v.id === vehicleId) : null;
+  const vehicleLabel = chosen ? `${chosen.year} ${chosen.make} ${chosen.model}` : null;
+  const { data: cust } = await supabaseAdmin
+    .from("customers").select("full_name").eq("id", pinned.customerId).maybeSingle();
+  const customerName = cust?.full_name ?? null;
+
   const booking = getBookingProvider();
   const result = await booking.createAppointment({
     companyId: pinned.companyId,
@@ -645,11 +674,16 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
     dropOff: ["waiting", "dropping_off"].includes(args.drop_off) ? args.drop_off : "unknown",
     startsAt,
     durationMin: Number(args.service_minutes) > 0 ? Number(args.service_minutes) : 45,
-    notes: [
-      otherVehicle && !vehicleId ? `VEHICLE NOT ON FILE: ${otherVehicle}` : "",
-      String(args.notes ?? "").trim(),
-      "(booked on inbound call)",
-    ].filter(Boolean).join(" "),
+    notes: buildAppointmentNote({
+      customerName: customerName ?? "Caller",
+      phone: pinned.callerNumber,
+      vehicle: vehicleLabel ?? otherVehicle ?? null,
+      vehicleOnFile: !!vehicleId,
+      ops: Array.isArray(args.service_ops) ? args.service_ops.map(String) : [],
+      dropOff: ["waiting", "dropping_off"].includes(args.drop_off) ? args.drop_off : "unknown",
+      when: startsAt ? spokenTime(startsAt, cfg.timezone) : preferredTime,
+      agentNotes: String(args.notes ?? "").trim(),
+    }),
   });
 
   // Mode-gated wording: in soft mode this promises a confirmation, never a firm slot (§2).

@@ -134,6 +134,19 @@ function Row({ a, tz, act }: { a: any; tz: string; act: (id: string, action: str
           {a.ops.length > 0 && ` · ${a.ops.join(", ")}`}
           {!a.starts_at && a.preferred_time && ` · asked for "${a.preferred_time}"`}
         </div>
+        {/* The full note — who called, what they asked for, and the call summary once it lands.
+            An advisor places this in myKaarma without listening to the recording. */}
+        {a.notes && (
+          <details style={{ marginTop: 6 }}>
+            <summary className="hint" style={{ cursor: "pointer", color: "var(--accent-deep)", fontWeight: 600 }}>
+              Call notes
+            </summary>
+            <pre style={{
+              margin: "6px 0 0", whiteSpace: "pre-wrap", fontSize: 12.5, lineHeight: 1.5,
+              color: "var(--muted)", fontFamily: "inherit",
+            }}>{a.notes.replace(/\nAA:[0-9a-f-]+/i, "")}</pre>
+          </details>
+        )}
       </div>
       <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
         {a.status === "pending_confirmation" && <button className="btn" onClick={() => act(a.id, "confirm")}>Confirm</button>}

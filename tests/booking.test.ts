@@ -65,3 +65,20 @@ test("a vehicle not on file is never booked against a different car", () => {
     "the single-vehicle fallback can override an explicitly different vehicle");
   assert.ok(/VEHICLE NOT ON FILE/.test(body), "unknown vehicle isn't recorded for the advisor");
 });
+
+test("the appointment note tells an advisor who, what car, what work, and waiting-vs-drop-off", () => {
+  // "(booked on inbound call) AA:uuid" told them none of that. They place this in myKaarma
+  // without listening to the recording, so the row has to stand on its own.
+  const start = SRC.indexOf("function buildAppointmentNote");
+  assert.ok(start > 0, "no appointment note builder");
+  const body = SRC.slice(start, SRC.indexOf("\n}", start));
+  for (const field of ["customerName", "vehicle", "Requested", "When", "WAIT"]) {
+    assert.ok(body.includes(field), `note is missing ${field}`);
+  }
+});
+
+test("a vehicle we don't have on file is flagged in the note", () => {
+  const start = SRC.indexOf("function buildAppointmentNote");
+  const body = SRC.slice(start, SRC.indexOf("\n}", start));
+  assert.ok(/NOT ON FILE/.test(body), "advisor isn't told to add an unknown vehicle");
+});
