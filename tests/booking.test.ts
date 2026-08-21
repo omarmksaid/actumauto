@@ -369,3 +369,23 @@ test("with no transfer number the kill switch still answers rather than dead-air
   assert.ok(/&& ctx\.transferNumber/.test(fn),
     "the forward isn't guarded on a transfer number existing");
 });
+
+test("the call summary is scoped to what the appointment row doesn't already say", () => {
+  // The default Vapi summary narrated the call and repeated name/vehicle/time/waiting — all of
+  // which the row already shows — burying the one useful fact (he asked about pricing).
+  const SRC = readFileSync("src/inbound/assistant.ts", "utf8");
+  assert.ok(/analysisPlan:/.test(SRC), "no analysisPlan, so Vapi writes a generic call recap");
+  const plan = SRC.slice(SRC.indexOf("analysisPlan:"), SRC.indexOf("maxDurationSeconds"));
+  assert.ok(/Never repeat any of that/.test(plan), "the summary may restate the structured fields");
+  assert.ok(/never narrate the call/.test(plan), "the summary may narrate the call");
+  assert.ok(/No extra notes/.test(plan), "no sentinel for a call with nothing to add");
+});
+
+test("a summary with nothing to add is not appended", () => {
+  // Stamping "No extra notes" onto every routine booking is noise the advisor scrolls past.
+  const SRC = readFileSync("src/calls/events.ts", "utf8");
+  assert.ok(/no extra notes\\\.\?\$\/i\.test\(summary\)/.test(SRC) || /hasExtra/.test(SRC),
+    "the sentinel is appended to the appointment like a real note");
+  assert.ok(/if \(hasExtra && call\.customer_id\)/.test(SRC),
+    "the append isn't gated on there being something to add");
+});

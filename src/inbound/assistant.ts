@@ -385,6 +385,33 @@ export function buildInboundAssistant(ctx: InboundContext, voice: { provider: st
     // A caller who goes quiet should not sit on an open, billed line. Vapi's default is
     // generous; a service call has no reason to hold 30s of silence.
     silenceTimeoutSeconds: 20,
+    // Vapi's default summary narrates the call ("X called to schedule an oil change...") and
+    // repeats who/what/when, all of which the appointment row already states. The advisor reads
+    // this attached to that row, so the only thing worth writing is what ISN'T in the fields:
+    // what they asked that went unanswered, and anything they mentioned about the vehicle.
+    analysisPlan: {
+      summaryPlan: {
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are writing a note for a service advisor who is looking at this customer's " +
+              "appointment. The row ALREADY shows their name, phone, vehicle, the work requested, " +
+              "the time, and whether they're waiting or dropping off. Never repeat any of that, " +
+              "and never narrate the call.\n\n" +
+              "Write ONLY what the advisor could not otherwise know, as short bullet points:\n" +
+              "- questions the caller asked that the assistant could not answer (pricing, how " +
+              "long it takes, warranty, loaners, status of a car in the shop)\n" +
+              "- symptoms or vehicle details they described (noises, warning lights, mileage)\n" +
+              "- anything they asked to be called back about, or seemed unhappy with\n" +
+              "- constraints they mentioned (needs it by a time, dropping off early, no ride)\n\n" +
+              "If there is nothing beyond the booking itself, reply with exactly: No extra notes.\n" +
+              "Be terse. No preamble, no greeting, no summary sentence. Under 40 words.",
+          },
+          { role: "user", content: "Transcript:\n\n{{transcript}}" },
+        ],
+      },
+    },
     maxDurationSeconds: 900,                     // inbound runs longer than a reminder call
     // Speak the first chunk as soon as a sentence is ready instead of waiting for the whole
     // response — the largest perceived-latency win, since 1.6s of LLM time is otherwise silence.

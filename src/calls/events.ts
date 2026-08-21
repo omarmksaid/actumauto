@@ -95,9 +95,12 @@ async function handleEndOfCall(msg: any): Promise<void> {
   await storeTranscript(call.company_id, call.id, call.customer_id, msg);
 
   // Vapi's summary only exists once the call ends, which is after book_service already wrote the
-  // row. Append it so an advisor gets the caller's actual words, not just the structured fields.
+  // row. It's shaped by summaryPlan (see inbound/assistant.ts) to carry ONLY what the structured
+  // fields don't already say. When there's nothing extra it returns a fixed sentinel, and
+  // appending "No extra notes" to every appointment is just noise for the advisor to scroll past.
   const summary = String(msg.analysis?.summary ?? "").trim();
-  if (summary && call.customer_id) {
+  const hasExtra = summary && !/^no extra notes\.?$/i.test(summary);
+  if (hasExtra && call.customer_id) {
     const { data: appts } = await supabaseAdmin
       .from("appointments")
       .select("id, notes")
@@ -107,9 +110,9 @@ async function handleEndOfCall(msg: any): Promise<void> {
       .order("created_at", { ascending: false })
       .limit(1);
     const appt = appts?.[0];
-    if (appt && !String(appt.notes ?? "").includes("Call summary:")) {
+    if (appt && !String(appt.notes ?? "").includes("From the call:")) {
       await supabaseAdmin.from("appointments").update({
-        notes: `${appt.notes ?? ""}\n\nCall summary: ${summary}`.trim(),
+        notes: `${appt.notes ?? ""}\n\nFrom the call:\n${summary}`.trim(),
       }).eq("id", appt.id);
     }
   }
