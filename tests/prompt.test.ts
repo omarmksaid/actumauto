@@ -205,3 +205,21 @@ test("asking for a person still transfers immediately", () => {
   assert.ok(/ask for a person, a manager, or to speak to someone/i.test(p),
     "a direct request for a human is no longer an immediate transfer");
 });
+
+test("the agent doesn't claim the transfer succeeded", () => {
+  // From a test call the agent said "You're connected now." after transferCall. It cannot know
+  // that: the leg is handed to the provider and the advisor may not pick up, may be ringing, or
+  // may be at voicemail. Same class of error as saying "you're booked" with nothing reserved.
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "T", timezone: "America/Los_Angeles",
+    customerId: null, customerName: null, customerLanguage: null,
+    vehicles: [], offerings: [], transferNumber: "+14085550111", greeting: null,
+    personaTemplate: null, identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 0,
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(/After calling transferCall, say NOTHING further/i.test(p),
+    "the agent may still narrate after handing off the call");
+  assert.ok(/is a\s+claim you cannot make/i.test(p),
+    "nothing explains why asserting the connection is wrong");
+});
