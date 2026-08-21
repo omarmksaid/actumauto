@@ -82,6 +82,10 @@ export default function SettingsPage() {
         </Field>
       </div>
 
+      {/* Operating hours drive what the agent offers on a live call, so they belong with the
+          rest of the agent's configuration and save with the same button. */}
+      <BusinessHours hours={s.business_hours ?? {}} onChange={(h) => setS({ ...s, business_hours: h })} />
+
       <div className="row-between" style={{ margin: "20px 0" }}>
         {saved ? <span className="banner banner-ok">Saved.</span> : <span />}
         <button className="btn btn-primary" onClick={save}>Save settings</button>
