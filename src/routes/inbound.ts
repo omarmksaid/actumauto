@@ -179,13 +179,21 @@ async function runTool(name: string, args: any, pinned: PinnedCall): Promise<str
     case "check_service_due":  return await checkServiceDue(args, pinned);
     case "register_customer":  return await registerCustomer(args, pinned);
     case "book_service":      return await bookService(args, pinned);
+    case "create_profile":
+    case "register_customer":
+    case "create_customer":    return await createProfile(args, pinned);
     case "check_availability": return await checkAvailability(args, pinned);
     case "list_appointments":  return await listAppointments(pinned);
     case "cancel_appointment": return await cancelAppointment(args, pinned);
     case "log_handoff":         return await logHandoff(args, pinned);
     // Older name kept so a call already in flight during a deploy doesn't break.
     case "transfer_to_service": return await logHandoff(args, pinned);
-    default:                  return "That isn't something I can do.";
+    default:
+      // Name the real tools: a model that invented a name can usually recover if told the set.
+      console.warn(`[inbound] unknown tool: ${name}`);
+      return `FAILED — there's no tool called "${name}". Available: lookup_services, ` +
+        `check_service_due, check_availability, book_service, list_appointments, ` +
+        `cancel_appointment, create_profile, log_handoff, transferCall.`;
   }
 }
 
@@ -554,7 +562,11 @@ async function attachVehicle(
 }
 
 async function bookService(args: any, pinned: PinnedCall): Promise<string> {
-  if (!pinned.customerId) return ANON_REFUSAL;
+  if (!pinned.customerId) {
+    return "FAILED — no record for this caller yet, so there's nothing to attach a booking to. " +
+      "Do NOT say it's booked. Ask their name and what they drive, call create_profile, then " +
+      "book again.";
+  }
 
   const preferredTime = String(args.preferred_time ?? "").trim();
   if (!preferredTime) return "FAILED — no time given. Do NOT say it's booked. Ask what day and time works.";
@@ -644,8 +656,77 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
   return result.confirmationText;
 }
 
+/**
+ * Create a record for a caller we don't have on file.
+ *
+ * Deliberately scoped to ANONYMOUS callers: creating a new row risks nothing an advisor curated,
+ * whereas modifying an identified customer's record from an unverified call does. If the number
+ * later turns out to belong to an existing customer, an advisor merges — a duplicate is a much
+ * cheaper mistake than a corrupted record.
+ */
+async function createProfile(args: any, pinned: PinnedCall): Promise<string> {
+  if (pinned.customerId) {
+    return "FAILED — this caller already has a record. Don't create another; use their vehicles.";
+  }
+
+  const fullName = String(args.full_name ?? "").trim();
+  if (!fullName) return "FAILED — no name given. Ask who you're speaking with first.";
+
+  // Race guard: two calls from one number shouldn't create two records.
+  const digits = (pinned.callerNumber ?? "").replace(/\D/g, "").slice(-10);
+  if (digits.length === 10) {
+    const { data: existing } = await supabaseAdmin
+      .from("customers").select("id").eq("company_id", pinned.companyId)
+      .ilike("phone", `%${digits}%`).limit(1).maybeSingle();
+    if (existing) {
+      await supabaseAdmin.from("calls").update({ customer_id: existing.id }).eq("id", pinned.callId);
+      return "They already have a record — it's linked now. Carry on and book them normally.";
+    }
+  }
+
+  const { data: customer, error } = await supabaseAdmin.from("customers").insert({
+    company_id: pinned.companyId,
+    full_name: fullName,
+    phone: pinned.callerNumber,
+    email: String(args.email ?? "").trim() || null,
+    customer_type: "new",
+    // Flagged so an advisor can verify details taken over the phone.
+    notes: "Created from an inbound call — details unverified.",
+  }).select("id").single();
+  if (error) {
+    console.error("[create_profile]", error.message);
+    return "FAILED — couldn't create the record. Offer to transfer them instead.";
+  }
+
+  let vehicleNote = "";
+  const make = String(args.make ?? "").trim();
+  const model = String(args.model ?? "").trim();
+  const year = Number(args.year);
+  if (make && model && year) {
+    const mileage = Number(args.mileage) > 0 ? Number(args.mileage) : null;
+    await supabaseAdmin.from("vehicles").insert({
+      company_id: pinned.companyId, customer_id: customer.id,
+      make, model, year, mileage,
+      mileage_as_of: mileage ? todayIso() : null,
+    });
+    vehicleNote = ` and their ${year} ${make} ${model}`;
+  }
+
+  // Pin the new identity to this call so the customer-scoped tools work for the rest of it.
+  await supabaseAdmin.from("calls").update({ customer_id: customer.id }).eq("id", pinned.callId);
+
+  return `Record created for ${fullName}${vehicleNote}. You can book them now — call ` +
+    `get_my_vehicles to get the vehicle id.`;
+}
+
 /** Open times on a date, so the agent only ever offers slots the shop can actually take. */
 async function checkAvailability(args: any, pinned: PinnedCall): Promise<string> {
+  if (!pinned.customerId) {
+    return "FAILED — no record for this caller, so nothing can be booked yet and offering times " +
+      "would be a promise you can't keep. Ask their name and what they drive, call " +
+      "create_profile, then check availability.";
+  }
+
   const cfg = await loadShopConfig(pinned.companyId);
   const mins = Number(args.service_minutes) > 0 ? Number(args.service_minutes) : 45;
   const rawDate = String(args.date ?? "").trim();

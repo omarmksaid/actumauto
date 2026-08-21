@@ -195,6 +195,33 @@ function toolDefinitions(ctx: InboundContext) {
     );
   }
 
+  // Unrecognized callers only. Creates a NEW record; it can never modify an existing customer,
+  // which is the write we're not willing to make from an unverified phone call.
+  if (ctx.agentEnabled && !ctx.customerId) {
+    tools.push({
+      type: "function",
+      function: {
+        name: "create_profile",
+        description:
+          "Start a record for a caller we don't have on file, so you can book them. Collect their " +
+          "name and what they drive first.",
+        parameters: {
+          type: "object",
+          properties: {
+            full_name: { type: "string", description: "Their name as they gave it." },
+            make: { type: "string", description: "e.g. Toyota" },
+            model: { type: "string", description: "e.g. RAV4" },
+            year: { type: "number" },
+            mileage: { type: "number", description: "Current odometer, if they know it." },
+            email: { type: "string" },
+          },
+          required: ["full_name"],
+        },
+      },
+      server,
+    });
+  }
+
   // Recording the handoff works in both modes.
   tools.push(HANDOFF_TOOL(server));
 
