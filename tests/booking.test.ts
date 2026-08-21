@@ -117,3 +117,40 @@ test("a vehicle we don't have on file is flagged in the note", () => {
   const body = fnBody("buildAppointmentNote");
   assert.ok(/NOT ON FILE/.test(body), "advisor isn't told to add an unknown vehicle");
 });
+
+test("the prompt tells the model to carry an answered vehicle question into the flag", () => {
+  // From a real call: the agent asked "are we talking about your 2022 RAV4?", the caller said
+  // yes, then book_service was called WITHOUT vehicle_confirmed. The gate refused, and the
+  // caller was asked the identical question a second time. The gate is right; the model just
+  // was never told that an earlier answer sets the flag.
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "T", timezone: "America/Los_Angeles",
+    customerId: "cu", customerName: "Omar Said", customerLanguage: null,
+    vehicles: [], offerings: [], transferNumber: null, greeting: null, personaTemplate: null,
+    identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 1,
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(/vehicle_confirmed: true/.test(p), "the prompt never names the flag");
+  assert.ok(/do not ask twice/i.test(p), "nothing prevents re-asking what they already answered");
+});
+
+test("the caller's real vehicle ids reach the prompt", () => {
+  // Without ids in the vehicle block the model has no reason to call get_my_vehicles, so it
+  // invents one ("2022-toyota-rav4"). That only books because of the single-vehicle fallback.
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "T", timezone: "America/Los_Angeles",
+    customerId: "cu", customerName: "Omar Said", customerLanguage: null,
+    vehicles: [
+      { id: "8f3c1e22-0000-4000-8000-000000000001", make: "Toyota", model: "RAV4", year: 2022, vin: null, mileage: 41000, due: null },
+      { id: "8f3c1e22-0000-4000-8000-000000000002", make: "Toyota", model: "Tacoma", year: 2024, vin: null, mileage: 9000, due: null },
+    ],
+    offerings: [], transferNumber: null, greeting: null, personaTemplate: null,
+    identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 1,
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(p.includes("id=8f3c1e22-0000-4000-8000-000000000001"), "RAV4 id missing from prompt");
+  assert.ok(p.includes("id=8f3c1e22-0000-4000-8000-000000000002"), "Tacoma id missing from prompt");
+  assert.ok(/never invent one/i.test(p), "the model isn't told to use these ids verbatim");
+});

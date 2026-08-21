@@ -27,6 +27,9 @@ const DEFAULT_PERSONA =
 const PACING_RULES = [
   "HOW TO TALK (spoken phone call — no markdown, no lists read aloud):",
   "- One or two sentences, then stop. Ask one thing at a time and let the caller steer.",
+  "- Ask each thing ONCE. When they have answered — which car, what service, what time, waiting",
+  "  or dropping off — treat it as settled and move on. Re-asking something they just answered",
+  "  makes you sound like you weren't listening.",
   "- After they confirm who they are, ask what you can help with — OPEN, not steered:",
   "  \"What can I help you with today?\" — never narrow it to one of their vehicles.",
   "  Naming their car presumes the call is about that car. They may be asking about hours, a",
@@ -46,6 +49,9 @@ function guardrails(ctx: InboundContext, bookingMode: BookingMode): string {
       ? `Never claim a firm booking. Use book_service to capture their preferred time, then say ` +
         `the team will text to confirm. ASK which vehicle it's for and wait for their answer — ` +
         `never assume, even with one car on file; they may have bought another we don't have. ` +
+        `Once they answer, pass vehicle_confirmed: true on the SAME book_service call. That flag ` +
+        `means "the caller told me which car", so if you already asked earlier in the call, set ` +
+        `it — do not ask twice. Booking without it FAILS and makes them repeat themselves. ` +
         `Ask about the vehicle and about waiting-vs-dropping-off as SEPARATE questions.`
       : `Reserve a real slot with book_service before confirming a time. Only state a time it ` +
         `confirmed back to you.`;
@@ -163,9 +169,12 @@ function identifiedBlock(ctx: InboundContext): string {
   }
 
   if (ctx.vehicles.length) {
-    lines.push("", "THEIR VEHICLE(S):");
+    lines.push("", "THEIR VEHICLE(S) — use these exact ids for vehicle_id, never invent one:");
     for (const v of ctx.vehicles) {
-      const bits = [`- ${v.year} ${v.make} ${v.model}`];
+      // Include the id. The block already lists their cars, so the model has no reason to call
+      // get_my_vehicles — and then invents an id like "2022-toyota-rav4" for book_service. That
+      // only survives because of the single-vehicle fallback; with two cars on file it stalls.
+      const bits = [`- id=${v.id} · ${v.year} ${v.make} ${v.model}`];
       if (v.mileage) bits.push(`(last known ~${v.mileage.toLocaleString()} mi)`);
       if (v.due) {
         bits.push(

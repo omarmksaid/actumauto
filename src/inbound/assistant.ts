@@ -176,7 +176,8 @@ function toolDefinitions(ctx: InboundContext) {
               vehicle_id: { type: "string", description: "id from get_my_vehicles." },
               vehicle_confirmed: {
                 type: "boolean",
-                description: "Only true after you ASKED which vehicle and they answered. Never assume.",
+                description: "True once the caller has told you which car — including earlier in " +
+                  "this call. Never assume; but don't re-ask what they already answered.",
               },
               other_vehicle: {
                 type: "string",
