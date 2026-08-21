@@ -228,22 +228,36 @@ export const demoSchedules: ScheduleRow[] = [
 ];
 
 // ── Calendar ──  apiCall("/agent/calendar")
-export const demoCalendar = {
-  date: new Date().toISOString().slice(0, 10),
-  timezone: "America/Los_Angeles",
-  capacity: 4,
-  hours: {},
-  scheduled: [
-    { id: "a1", starts_at: new Date(new Date().setHours(9, 0, 0, 0)).toISOString(), ends_at: null,
-      status: "in_service", preferred_time: null, drop_off: "dropping_off", checked_in_at: new Date().toISOString(),
-      customer: "Maria Chen", phone: "+14085550142", vehicle: "2022 Toyota RAV4", ops: ["Oil & filter change"] },
-    { id: "a2", starts_at: new Date(new Date().setHours(10, 30, 0, 0)).toISOString(), ends_at: null,
-      status: "confirmed", preferred_time: null, drop_off: "waiting", checked_in_at: null,
-      customer: "Devon Park", phone: "+14085550199", vehicle: "2020 Toyota Camry", ops: ["Brake pad replacement"] },
-  ],
-  unscheduled: [
-    { id: "a3", starts_at: null, ends_at: null, status: "pending_confirmation",
-      preferred_time: "Friday morning", drop_off: "unknown", checked_in_at: null,
-      customer: "Priya Nair", phone: "+14085550188", vehicle: "2019 Toyota Sienna", ops: ["Tire rotation & balance"] },
-  ],
-};
+export const demoCalendar = (() => {
+  const day = (off: number) => {
+    const d = new Date(); d.setDate(d.getDate() + off); return d.toISOString().slice(0, 10);
+  };
+  const wd = (off: number) => {
+    const d = new Date(); d.setDate(d.getDate() + off);
+    return d.toLocaleDateString("en-US", { weekday: "short" });
+  };
+  const appt = (id: string, time: string, customer: string, vehicle: string, status: string) => ({
+    id, starts_at: new Date().toISOString(), ends_at: null, status, preferred_time: null,
+    drop_off: "waiting", checked_in_at: null, notes: `${customer} — booked by phone\nVehicle: ${vehicle}`,
+    customer_id: "c1", customer, phone: "+14085550142", vehicle, ops: ["Oil & filter change"],
+    local_day: null, local_time: time,
+  });
+  return {
+    view: "week",
+    timezone: "America/Los_Angeles",
+    capacity: 4,
+    today: day(0),
+    total: 3,
+    days: [-1, 0, 1, 2, 3, 4, 5].map((off, i) => ({
+      date: day(off), weekday: wd(off), closed: i === 0,
+      appointments: off === 0 ? [appt("a1", "9:00 AM", "Maria Chen", "2022 Toyota RAV4", "in_service"),
+                                 appt("a2", "10:30 AM", "Devon Park", "2020 Toyota Camry", "confirmed")]
+        : off === 2 ? [appt("a3", "8:00 AM", "Priya Nair", "2019 Toyota Sienna", "confirmed")] : [],
+    })),
+    unscheduled: [{ id: "a4", starts_at: null, ends_at: null, status: "pending_confirmation",
+      preferred_time: "Friday morning", drop_off: "unknown", checked_in_at: null, notes: null,
+      customer_id: "c3", customer: "Sam Rivera", phone: "+14085550170",
+      vehicle: "2021 Toyota Tacoma", ops: ["Tire rotation"], local_day: null, local_time: null }],
+  };
+})();
+

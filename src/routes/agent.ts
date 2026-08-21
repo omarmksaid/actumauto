@@ -271,19 +271,46 @@ agentRoutes.get("/calls", async (c) => {
 // silently dropping them would hide real bookings an advisor still has to place.
 agentRoutes.get("/calendar", async (c) => {
   const companyId = cid(c);
-  const date = (c.req.query("date") ?? "").trim();
+  const dateParam = (c.req.query("date") ?? "").trim();
+  const view = c.req.query("view") === "day" ? "day" : "week";
 
   const { data: co } = await supabaseAdmin
     .from("companies").select("timezone, business_hours, concurrent_capacity")
     .eq("id", companyId).maybeSingle();
   const tz = co?.timezone || "America/Los_Angeles";
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" })
-    .format(new Date());
-  const day = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : today;
 
-  // Wide UTC bounds; the exact local window is applied when grouping.
-  const from = new Date(`${day}T00:00:00Z`); from.setUTCHours(from.getUTCHours() - 14);
-  const to = new Date(`${day}T23:59:59Z`); to.setUTCHours(to.getUTCHours() + 14);
+  /** The local calendar date of an instant, in the DEALERSHIP's timezone. */
+  const localDay = (d: Date) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" })
+      .format(d);
+  const localDow = (d: Date) =>
+    new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(d).toLowerCase().slice(0, 3);
+
+  const anchor = /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
+    ? new Date(`${dateParam}T12:00:00Z`)     // midday avoids the date shifting under any offset
+    : new Date();
+  const anchorDay = localDay(anchor);
+
+  // Build the visible days by walking calendar days, never by adding 24h to a timestamp — a DST
+  // transition makes one day 23 or 25 hours long and would silently drop or duplicate a day.
+  const DOW = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+  const days: string[] = [];
+  if (view === "day") days.push(anchorDay);
+  else {
+    let cursor = new Date(anchor);
+    while (localDow(cursor) !== "sun") cursor = new Date(cursor.getTime() - 86400_000);
+    for (let i = 0; i < 7; i++) {
+      days.push(localDay(cursor));
+      cursor = new Date(cursor.getTime() + 86400_000);
+    }
+  }
+
+  // Query bounds: ±36h around the visible range, so no appointment near a local midnight is
+  // missed regardless of offset. Exact membership is decided by local day below.
+  const from = new Date(`${days[0]}T00:00:00Z`);
+  from.setUTCHours(from.getUTCHours() - 36);
+  const to = new Date(`${days[days.length - 1]}T23:59:59Z`);
+  to.setUTCHours(to.getUTCHours() + 36);
 
   const COLS = "id, starts_at, ends_at, status, preferred_time, service_ops, drop_off, checked_in_at, notes, customer_id, customers(full_name, phone), vehicles(year, make, model)";
 
@@ -291,43 +318,50 @@ agentRoutes.get("/calendar", async (c) => {
     supabaseAdmin.from("appointments").select(COLS)
       .eq("company_id", companyId).not("status", "in", "(canceled)")
       .gte("starts_at", from.toISOString()).lte("starts_at", to.toISOString())
-      .order("starts_at", { ascending: true }),
+      .order("starts_at", { ascending: true }).limit(500),
     // Separate query: a range filter on starts_at excludes NULLs, which would hide exactly the
     // appointments that still need a human to place them.
     supabaseAdmin.from("appointments").select(COLS)
       .eq("company_id", companyId).in("status", ["pending_confirmation", "confirmed"])
-      .is("starts_at", null).order("created_at", { ascending: true }).limit(50),
+      .is("starts_at", null).order("created_at", { ascending: true }).limit(100),
   ]);
-  const appts = [...(timed ?? []), ...(untimed ?? [])];
 
-  const localDay = (iso: string) =>
-    new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" })
-      .format(new Date(iso));
-
-  const rows = (appts ?? []).map((a: any) => ({
-    id: a.id,
-    starts_at: a.starts_at,
-    ends_at: a.ends_at,
-    status: a.status,
-    preferred_time: a.preferred_time,
-    drop_off: a.drop_off,
-    checked_in_at: a.checked_in_at,
-    notes: a.notes,
-    customer_id: a.customer_id,
+  const shape = (a: any) => ({
+    id: a.id, starts_at: a.starts_at, ends_at: a.ends_at, status: a.status,
+    preferred_time: a.preferred_time, drop_off: a.drop_off, checked_in_at: a.checked_in_at,
+    notes: a.notes, customer_id: a.customer_id,
     customer: a.customers?.full_name ?? null,
     phone: a.customers?.phone ?? null,
     vehicle: a.vehicles ? `${a.vehicles.year} ${a.vehicles.make} ${a.vehicles.model}` : null,
     ops: a.service_ops?.ops ?? [],
-  }));
+    // Local wall-clock, computed server-side so every client agrees.
+    local_day: a.starts_at ? localDay(new Date(a.starts_at)) : null,
+    local_time: a.starts_at
+      ? new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" })
+          .format(new Date(a.starts_at))
+      : null,
+  });
+
+  const rows = (timed ?? []).map(shape);
+  const hours = (co?.business_hours ?? {}) as Record<string, [string, string] | null>;
 
   return c.json({
-    date: day,
+    view,
+    days: days.map((day) => {
+      const dow = DOW[new Date(`${day}T12:00:00Z`).getUTCDay()];
+      return {
+        date: day,
+        weekday: new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short" })
+          .format(new Date(`${day}T12:00:00Z`)),
+        closed: !hours[dow],
+        appointments: rows.filter((r) => r.local_day === day),
+      };
+    }),
     timezone: tz,
     capacity: co?.concurrent_capacity ?? 4,
-    hours: (co?.business_hours ?? {}) as any,
-    scheduled: rows.filter((r) => r.starts_at && localDay(r.starts_at) === day),
-    // Requests with no resolved time — an advisor still has to place these.
-    unscheduled: rows.filter((r) => !r.starts_at),
+    today: localDay(new Date()),
+    unscheduled: (untimed ?? []).map(shape),
+    total: rows.length,
   });
 });
 
