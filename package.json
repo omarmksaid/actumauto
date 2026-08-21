@@ -8,7 +8,9 @@
     "build": "tsc --noEmit",
     "start": "node --import tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "preflight": "tsx scripts/preflight.ts"
+    "preflight": "tsx scripts/preflight.ts",
+    "dev:all": "npm run dev & (cd web && npm run dev) & wait",
+    "stop": "pkill -f 'tsx watch src/index.ts' ; pkill -f 'next dev' ; true"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

@@ -146,6 +146,20 @@ cp .env.local.example .env.local   # (create it — see the web env table below)
 npm install
 npm run dev               # http://localhost:3001
 ```
+### Everything locally
+
+```bash
+npm run dev:all     # API on :3000 and dashboard on :3001, Ctrl-C stops both
+npm run stop        # if one is left running
+```
+
+The dashboard reads `NEXT_PUBLIC_API_URL` from `web/.env.local`, which
+`./scripts/use-backend.sh local` points at localhost. Backend edits then show up
+immediately — no deploy.
+
+Note: Vapi still calls the DEPLOYED backend, so real phone calls exercise Railway, not your
+laptop. Use `scripts/chat.ts` to test agent changes locally.
+
 ### Frontend against the deployed backend
 
 To work on the dashboard without running the API locally:
