@@ -174,6 +174,14 @@ function toolDefinitions(ctx: InboundContext) {
                   "Include it whenever you know the specific time — it reserves the slot.",
               },
               vehicle_id: { type: "string", description: "id from get_my_vehicles." },
+              vehicle_confirmed: {
+                type: "boolean",
+                description: "Only true after you ASKED which vehicle and they answered. Never assume.",
+              },
+              other_vehicle: {
+                type: "string",
+                description: "If it's a car we don't have on file, their description of it (e.g. '2024 Tacoma').",
+              },
               service_ops: { type: "array", items: { type: "string" } },
               drop_off: { type: "string", enum: ["waiting", "dropping_off"] },
               notes: { type: "string" },

@@ -47,3 +47,21 @@ test("the prompt forbids claiming success the tool didn't return", () => {
   assert.ok(/NEVER say something is booked/i.test(p), "prompt doesn't forbid false confirmation");
   assert.ok(/FAILED/.test(p), "prompt doesn't explain the FAILED convention");
 });
+
+test("booking requires the vehicle to be confirmed out loud", () => {
+  const start = SRC.indexOf("async function bookService");
+  const body = SRC.slice(start, SRC.indexOf("\nasync function", start + 10));
+  assert.ok(/vehicle_confirmed/.test(body), "no confirmation gate before booking");
+  assert.ok(/haven't confirmed which vehicle/i.test(body),
+    "the refusal doesn't tell the agent to ask which car");
+});
+
+test("a vehicle not on file is never booked against a different car", () => {
+  const start = SRC.indexOf("async function bookService");
+  const body = SRC.slice(start, SRC.indexOf("\nasync function", start + 10));
+  // other_vehicle must be checked BEFORE the single-vehicle fallback, or a Tacoma gets stored
+  // as the customer's RAV4 and the advisor never learns which car is arriving.
+  assert.ok(body.indexOf("if (otherVehicle)") < body.indexOf("vehicles.length === 1"),
+    "the single-vehicle fallback can override an explicitly different vehicle");
+  assert.ok(/VEHICLE NOT ON FILE/.test(body), "unknown vehicle isn't recorded for the advisor");
+});

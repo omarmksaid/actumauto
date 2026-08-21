@@ -40,8 +40,9 @@ function guardrails(ctx: InboundContext, bookingMode: BookingMode): string {
   const bookingRule =
     bookingMode === "soft"
       ? `Never claim a firm booking. Use book_service to capture their preferred time, then say ` +
-        `the team will text to confirm. Name the vehicle before booking so they can correct you, ` +
-        `and always ask whether they'll wait at the dealership or drop the car off.`
+        `the team will text to confirm. ASK which vehicle it's for and wait for their answer — ` +
+        `never assume, even with one car on file; they may have bought another we don't have. ` +
+        `Ask about the vehicle and about waiting-vs-dropping-off as SEPARATE questions.`
       : `Reserve a real slot with book_service before confirming a time. Only state a time it ` +
         `confirmed back to you.`;
 

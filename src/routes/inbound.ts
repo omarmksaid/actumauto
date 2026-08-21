@@ -588,13 +588,30 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
   // vehicle_id is the ONLY id we accept from the model — so validate it belongs to this caller.
   let vehicleId: string | null = null;
   const vehicles = await loadVehiclesWithDue(pinned.companyId, pinned.customerId, todayIso());
-  if (args.vehicle_id) {
+  const otherVehicle = String(args.other_vehicle ?? "").trim();
+
+  // The vehicle must be CONFIRMED OUT LOUD, not assumed. A customer who bought a second car we
+  // don't have on file would otherwise get their old one booked without ever being asked.
+  const confirmed = args.vehicle_confirmed === true || args.vehicle_confirmed === "true";
+  if (!confirmed) {
+    const list = vehicles.length
+      ? vehicles.map((v) => `${v.year} ${v.make} ${v.model}`).join(" or ")
+      : "no vehicle on file";
+    return `FAILED — you haven't confirmed which vehicle. Do NOT say it's booked. Ask them ` +
+      `directly: "is this for your ${list}?" If it's a car we don't have on file, say we'll ` +
+      `add it and note the make and model. Then call book_service again with ` +
+      `vehicle_confirmed: true.`;
+  }
+
+  if (otherVehicle) {
+    // A car we don't hold. Leave vehicle_id null and carry the description into the notes.
+    vehicleId = null;
+  } else if (args.vehicle_id) {
     const match = vehicles.find((v) => v.id === args.vehicle_id);
     if (match) vehicleId = match.id;
     else if (vehicles.length === 1) {
-      // The model invented an id like "2022_Toyota_RAV4" instead of using the UUID. With one
-      // vehicle on file there's no ambiguity about which car, so book it rather than dead-end —
-      // the previous hard refusal is what let the agent claim a booking that never happened.
+      // The model invented an id like "2022_Toyota_RAV4" instead of the UUID. Safe to fall back
+      // only because the vehicle was explicitly confirmed with the caller above.
       vehicleId = vehicles[0].id;
     } else {
       return "FAILED — that vehicle id isn't on this caller's account. Do NOT tell them it's " +
@@ -616,7 +633,11 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
     dropOff: ["waiting", "dropping_off"].includes(args.drop_off) ? args.drop_off : "unknown",
     startsAt,
     durationMin: Number(args.service_minutes) > 0 ? Number(args.service_minutes) : 45,
-    notes: [String(args.notes ?? "").trim(), "(booked on inbound call)"].filter(Boolean).join(" "),
+    notes: [
+      otherVehicle && !vehicleId ? `VEHICLE NOT ON FILE: ${otherVehicle}` : "",
+      String(args.notes ?? "").trim(),
+      "(booked on inbound call)",
+    ].filter(Boolean).join(" "),
   });
 
   // Mode-gated wording: in soft mode this promises a confirmation, never a firm slot (§2).
