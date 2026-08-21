@@ -557,7 +557,7 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
   if (!pinned.customerId) return ANON_REFUSAL;
 
   const preferredTime = String(args.preferred_time ?? "").trim();
-  if (!preferredTime) return "Ask the caller what day and time works for them first.";
+  if (!preferredTime) return "FAILED — no time given. Do NOT say it's booked. Ask what day and time works.";
 
   // A resolved slot reserves real time; free text alone can't be checked for conflicts.
   const cfg = await loadShopConfig(pinned.companyId);
@@ -572,7 +572,7 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
       const durationMin = Number(args.service_minutes) > 0 ? Number(args.service_minutes) : 45;
       const verdict = await checkSlot(pinned.companyId, cfg, parsed, durationMin);
       if (!verdict.ok) {
-        return `Can't book that — ${verdict.reason}. Call check_availability and offer a real time.`;
+        return `FAILED — ${verdict.reason}. Do NOT say it's booked. Call check_availability and offer a real time.`;
       }
       startsAt = parsed;
     }
@@ -590,12 +590,20 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
   const vehicles = await loadVehiclesWithDue(pinned.companyId, pinned.customerId, todayIso());
   if (args.vehicle_id) {
     const match = vehicles.find((v) => v.id === args.vehicle_id);
-    if (!match) return "That vehicle isn't on this caller's account — ask which of their cars they mean.";
-    vehicleId = match.id;
+    if (match) vehicleId = match.id;
+    else if (vehicles.length === 1) {
+      // The model invented an id like "2022_Toyota_RAV4" instead of using the UUID. With one
+      // vehicle on file there's no ambiguity about which car, so book it rather than dead-end —
+      // the previous hard refusal is what let the agent claim a booking that never happened.
+      vehicleId = vehicles[0].id;
+    } else {
+      return "FAILED — that vehicle id isn't on this caller's account. Do NOT tell them it's " +
+        "booked. Call get_my_vehicles, ask which car, and book again with the exact id.";
+    }
   } else if (vehicles.length === 1) {
     vehicleId = vehicles[0].id;
   } else if (vehicles.length > 1) {
-    return "This caller has more than one vehicle — ask which one, then call book_service with its id.";
+    return "FAILED — more than one vehicle on file. Do NOT say it's booked. Ask which car, then book with its id.";
   }
 
   const booking = getBookingProvider();
@@ -629,7 +637,8 @@ async function checkAvailability(args: any, pinned: PinnedCall): Promise<string>
     const days = Number(args.days) > 0 ? Math.min(Number(args.days), 14) : 7;
     const byDay = await nextAvailableSlots(pinned.companyId, cfg, todayIso(), mins, days, 6);
     if (!byDay.length) {
-      return `Nothing open in the next ${days} days. Offer to have an advisor call them back.`;
+      return `FAILED — nothing open in the next ${days} days. Do NOT say it's booked. Offer to ` +
+      `have an advisor call them back.`;
     }
     const soonest = byDay[0].slots[0];
     const later = byDay.slice(1).flatMap((d) => d.slots.map((s) => s.label)).slice(0, 4);
