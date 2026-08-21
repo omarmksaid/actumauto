@@ -224,6 +224,30 @@ function identifiedBlock(ctx: InboundContext): string {
     );
   }
 
+  const upcoming = ctx.upcoming ?? [];
+  if (upcoming.length) {
+    lines.push("", "THEIR UPCOMING APPOINTMENT(S) — use these exact ids to cancel:");
+    for (const a of upcoming) {
+      lines.push(`- id=${a.id} · ${a.when} · ${a.vehicle}` +
+        (a.ops.length ? ` · ${a.ops.join(", ")}` : "") +
+        (a.unscheduled ? " (no firm time yet)" : ""));
+    }
+    lines.push(
+      "You ALREADY have these — do not call list_appointments to find them.",
+      "Raise one WHEN IT'S RELEVANT, not as an opening:",
+      "- They mention an appointment, cancelling, rescheduling, or coming in — say what's on the",
+      "  books and ask if they want to change it. Don't make them prove it exists.",
+      "- They ask to book something they're already booked for — tell them they're on for that",
+      "  time already rather than creating a second visit.",
+      "- Otherwise, mention it once near the END of the call as a reminder, then let it go.",
+      "To CANCEL: confirm which one out loud, then cancel_appointment with the id above. Offer to",
+      "rebook instead of just cancelling.",
+      "To RESCHEDULE: there is no move tool. Confirm the new time with check_availability, call",
+      "book_service for it, THEN cancel_appointment on the old one — in that order, so they're",
+      "never left with nothing. Never leave both on the books.",
+    );
+  }
+
   const anyDue = ctx.vehicles.some((v) => v.due);
   if (anyDue) {
     lines.push(

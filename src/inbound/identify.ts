@@ -54,6 +54,8 @@ export interface InboundContext {
   todayLabel: string;
   /** Set when this caller's vehicle is physically in the shop right now. */
   inService: { vehicle: string; since: string | null; ops: string[] } | null;
+  /** Bookings still ahead of them. Loaded up front so the agent can raise one without a tool call. */
+  upcoming: { id: string; when: string; vehicle: string; ops: string[]; unscheduled: boolean }[];
   /** Diagnostics: how many customers matched the caller ID (0, 1, or >1 ⇒ ambiguous). */
   matchCount: number;
 }
@@ -107,6 +109,7 @@ export async function resolveInboundContext(
       timeZone: company?.timezone ?? "America/Los_Angeles",
     }),
     inService: null,
+    upcoming: [],
     matchCount: Number(row.match_count ?? 0),
   };
 
@@ -137,7 +140,50 @@ export async function resolveInboundContext(
     };
   }
 
+  ctx.upcoming = await loadUpcomingAppointments(companyId, customer.id, ctx.timezone);
+
   return ctx;
+}
+
+/**
+ * Appointments still ahead of this caller.
+ *
+ * Loaded with the rest of the call context rather than left to list_appointments, because the
+ * agent can only volunteer something it already knows: a caller who says "I need to move my
+ * appointment" gets a much better call than one who has to prove they have one first.
+ *
+ * Times are formatted in the DEALERSHIP's timezone. The server runs UTC, so a 4 PM Pacific visit
+ * would otherwise be read back as midnight the next day.
+ */
+export async function loadUpcomingAppointments(
+  companyId: string,
+  customerId: string,
+  timezone: string
+): Promise<InboundContext["upcoming"]> {
+  const { data } = await supabaseAdmin
+    .from("appointments")
+    .select("id, starts_at, preferred_time, service_ops, vehicles(year, make, model)")
+    .eq("company_id", companyId)
+    .eq("customer_id", customerId)
+    .in("status", ["pending_confirmation", "confirmed"])
+    // Past visits aren't actionable — offering to move one that already happened is worse than
+    // saying nothing. Rows with no time yet are kept: those are exactly the ones needing a change.
+    .or(`starts_at.gte.${new Date(Date.now() - 60 * 60_000).toISOString()},starts_at.is.null`)
+    .order("starts_at", { ascending: true, nullsFirst: false })
+    .limit(5);
+
+  return (data ?? []).map((a: any) => ({
+    id: a.id,
+    when: a.starts_at
+      ? new Intl.DateTimeFormat("en-US", {
+          timeZone: timezone, weekday: "long", month: "long", day: "numeric",
+          hour: "numeric", minute: "2-digit",
+        }).format(new Date(a.starts_at))
+      : (a.preferred_time ?? "time not set"),
+    vehicle: a.vehicles ? `${a.vehicles.year} ${a.vehicles.make} ${a.vehicles.model}` : "vehicle not specified",
+    ops: (a.service_ops?.ops ?? []) as string[],
+    unscheduled: !a.starts_at,
+  }));
 }
 
 /**

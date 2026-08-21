@@ -21,7 +21,7 @@
 import { Hono } from "hono";
 import { supabaseAdmin } from "../lib/supabase";
 import { env } from "../lib/env";
-import { resolveInboundContext, loadVehiclesWithDue, InboundContext, INBOUND_DUE_HORIZON_DAYS } from "../inbound/identify";
+import { resolveInboundContext, loadVehiclesWithDue, loadUpcomingAppointments, InboundContext, INBOUND_DUE_HORIZON_DAYS } from "../inbound/identify";
 import { computeDue } from "../scheduling/due";
 import { loadShopConfig, availableSlots, nextAvailableSlots, checkSlot, openWindow, currentlyInService, spokenTime } from "../scheduling/slots";
 
@@ -914,23 +914,19 @@ async function checkAvailability(args: any, pinned: PinnedCall): Promise<string>
 async function listAppointments(pinned: PinnedCall): Promise<string> {
   if (!pinned.customerId) return ANON_REFUSAL;
 
-  const { data } = await supabaseAdmin
-    .from("appointments")
-    .select("id, preferred_time, starts_at, status, service_ops, drop_off, vehicle_id, vehicles(year, make, model)")
-    .eq("customer_id", pinned.customerId)
-    .in("status", ["pending_confirmation", "confirmed"])
-    .order("created_at", { ascending: false })
-    .limit(10);
+  // Same loader the call context uses, so this tool and the prompt can never disagree about
+  // what's on the books — and it already filters out past visits and formats in the
+  // dealership's timezone rather than the server's UTC.
+  const cfg = await loadShopConfig(pinned.companyId);
+  const upcoming = await loadUpcomingAppointments(pinned.companyId, pinned.customerId, cfg.timezone);
 
-  if (!data?.length) return "They have no upcoming appointments on file.";
+  if (!upcoming.length) return "They have no upcoming appointments on file.";
 
-  return data.map((a: any) => {
-    const car = a.vehicles ? `${a.vehicles.year} ${a.vehicles.make} ${a.vehicles.model}` : "vehicle not specified";
-    const when = a.starts_at ? new Date(a.starts_at).toLocaleString() : (a.preferred_time ?? "time not set");
-    const ops = (a.service_ops?.ops ?? []).join(", ");
-    return `- id=${a.id} · ${when} · ${car}${ops ? ` · ${ops}` : ""}` +
-      `${a.status === "pending_confirmation" ? " (awaiting confirmation)" : ""}`;
-  }).join("\n");
+  return upcoming.map((a) =>
+    `- id=${a.id} · ${a.when} · ${a.vehicle}` +
+    (a.ops.length ? ` · ${a.ops.join(", ")}` : "") +
+    (a.unscheduled ? " (no firm time yet)" : "")
+  ).join("\n");
 }
 
 /**

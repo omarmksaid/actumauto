@@ -223,3 +223,55 @@ test("the agent doesn't claim the transfer succeeded", () => {
   assert.ok(/is a\s+claim you cannot make/i.test(p),
     "nothing explains why asserting the connection is wrong");
 });
+
+test("a known caller's upcoming appointments reach the prompt with real ids", () => {
+  // The agent can only volunteer what it already knows. Left to list_appointments, a caller
+  // saying "I need to move my appointment" has to prove one exists before anything happens.
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "T", timezone: "America/Los_Angeles",
+    customerId: "cu", customerName: "Omar Said", customerLanguage: null,
+    vehicles: [], offerings: [], transferNumber: null, greeting: null, personaTemplate: null,
+    identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 1,
+    upcoming: [{
+      id: "0f50f03d-6a35-478a-94cf-060dfe7f25e9",
+      when: "Monday, August 24 at 9:00 AM", vehicle: "2022 Toyota RAV4",
+      ops: ["Oil & filter change"], unscheduled: false,
+    }],
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(p.includes("id=0f50f03d-6a35-478a-94cf-060dfe7f25e9"), "the appointment id is missing");
+  assert.ok(/do not call list_appointments to find them/i.test(p),
+    "the agent isn't told it already has these");
+  assert.ok(/not as an opening/i.test(p),
+    "nothing stops the agent leading with an appointment the caller didn't ask about");
+});
+
+test("rescheduling books the new time before cancelling the old one", () => {
+  // There is no move tool. Cancelling first would leave the caller with nothing if the new slot
+  // turns out to be unavailable.
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "T", timezone: "America/Los_Angeles",
+    customerId: "cu", customerName: "Omar Said", customerLanguage: null,
+    vehicles: [], offerings: [], transferNumber: null, greeting: null, personaTemplate: null,
+    identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 1,
+    upcoming: [{ id: "a1", when: "Monday at 9:00 AM", vehicle: "2022 Toyota RAV4", ops: [], unscheduled: false }],
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(/THEN cancel_appointment on the old one/i.test(p), "no reschedule ordering rule");
+  assert.ok(/Never leave both on the books/i.test(p), "nothing prevents a duplicate visit");
+});
+
+test("a caller with no upcoming appointments gets no appointment block", () => {
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "T", timezone: "America/Los_Angeles",
+    customerId: "cu", customerName: "Omar Said", customerLanguage: null,
+    vehicles: [], offerings: [], transferNumber: null, greeting: null, personaTemplate: null,
+    identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 1, upcoming: [],
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(!/THEIR UPCOMING APPOINTMENT/.test(p),
+    "an empty appointment block is rendered, inviting the model to invent one");
+});
