@@ -53,3 +53,24 @@ test("availability never claims times outside the returned list are full", () =>
   assert.ok(!/Any other time that day is full/.test(src),
     "still tells the agent unlisted times are booked, which is false when the list is truncated");
 });
+
+test("the no-date availability reply is marked as a sample, not the full schedule", () => {
+  // From a real call: check_availability({}) returned "Soonest: 10 AM ... Further out: ...",
+  // the caller asked for 11 AM, and the agent said it wasn't available — on a day with fifteen
+  // open slots. It read a short sample as the complete inventory.
+  const SRC = readFileSync("src/routes/inbound.ts", "utf8");
+  const fn = SRC.slice(SRC.indexOf("async function checkAvailability"));
+  assert.ok(/EXAMPLES, not the full list/.test(fn),
+    "the no-date reply doesn't say it's a sample");
+  assert.ok(/do NOT say it's unavailable/i.test(fn),
+    "nothing stops the model judging availability from the sample");
+});
+
+test("check_availability exposes a `time` argument", () => {
+  // The handler read args.time and the reply told the model to pass it, but `time` was never
+  // declared in the tool schema — so the model COULD NOT check a specific time and had to
+  // answer from whatever the previous call returned.
+  const SRC = readFileSync("src/inbound/assistant.ts", "utf8");
+  const tool = SRC.slice(SRC.indexOf('name: "check_availability"'), SRC.indexOf('name: "book_service"'));
+  assert.ok(/\btime: \{/.test(tool), "`time` is missing from the check_availability schema");
+});

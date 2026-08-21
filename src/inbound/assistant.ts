@@ -142,7 +142,8 @@ function toolDefinitions(ctx: InboundContext) {
           description:
             "Open appointment times. Omit `date` for the soonest opening (and the week ahead); " +
             "pass a date, weekday, or 'tomorrow' for a specific day. Always call before offering " +
-            "a time.",
+            "a time, and call it AGAIN with `time` when the caller asks for a particular one — " +
+            "results from an earlier call are a sample, not the full schedule.",
           parameters: {
             type: "object",
             properties: {
@@ -150,6 +151,13 @@ function toolDefinitions(ctx: InboundContext) {
                 type: "string",
                 description: "Optional. YYYY-MM-DD, a weekday name, or 'tomorrow'. " +
                   "Leave it out to get the next available slot.",
+              },
+              // Without this the model cannot check a specific time, so it answers "not available"
+              // from whatever short sample the previous call returned — on a day that is wide open.
+              time: {
+                type: "string",
+                description: "A specific time the caller asked for, e.g. '11:00 AM'. Pass it " +
+                  "with `date` whenever they name a time — never judge availability yourself.",
               },
               days: { type: "number", description: "How many days ahead to scan; default 7." },
               service_minutes: { type: "number", description: "Expected duration; default 45." },

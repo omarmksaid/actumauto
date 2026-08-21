@@ -778,10 +778,16 @@ async function checkAvailability(args: any, pinned: PinnedCall): Promise<string>
     }
     const soonest = byDay[0].slots[0];
     const later = byDay.slice(1).flatMap((d) => d.slots.map((s) => s.label)).slice(0, 4);
+    // This is a SAMPLE, not the inventory. Without saying so, the model treats these few labels
+    // as the only openings and tells a caller asking for 11 AM that we're full — on a day with
+    // fifteen free slots. Every "is X available?" has to become a real lookup.
     return `Soonest: ${soonest.label}. Offer that one first. ` +
       (later.length
-        ? `Further out: ${later.join(", ")} — only mention these if they'd rather plan ahead.`
-        : `Nothing else open in that window.`);
+        ? `Further out: ${later.join(", ")} — only mention these if they'd rather plan ahead. `
+        : `Nothing else open in that window. `) +
+      `These are EXAMPLES, not the full list — most other times are probably open too. If they ` +
+      `ask for a specific time, do NOT say it's unavailable: call check_availability again with ` +
+      `date and time to check it.`;
   }
 
   // Accept a weekday name or "tomorrow" as well as a date. The model reliably knows what the
@@ -815,7 +821,28 @@ async function checkAvailability(args: any, pinned: PinnedCall): Promise<string>
     { timeZone: cfg.timezone, hour: "numeric", minute: "2-digit" }).format(d);
 
   if (asked) {
-    const wanted = slots.find((sl) => fmt(sl.startsAt).toLowerCase() === asked.toLowerCase().replace(/\s+/g, " ").trim());
+    // Match on minutes-since-midnight, not on the formatted label. The caller says "11am",
+    // "11", "11:00" — exact string equality against "11:00 AM" fails all three and reports a
+    // free slot as unavailable.
+    const parseAsked = (t: string): number | null => {
+      const m = t.toLowerCase().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
+      if (!m) return null;
+      let h = Number(m[1]);
+      const min = Number(m[2] ?? 0);
+      const mer = m[3];
+      if (mer === "pm" && h < 12) h += 12;
+      if (mer === "am" && h === 12) h = 0;
+      // No am/pm: a service department running 7-6 means "3" is 3 PM, not 3 AM.
+      if (!mer && h < 7) h += 12;
+      return h * 60 + min;
+    };
+    const wantedMin = parseAsked(asked);
+    const slotMin = (d: Date) => {
+      const parts = new Intl.DateTimeFormat("en-US", { timeZone: cfg.timezone, hour: "2-digit", minute: "2-digit", hour12: false })
+        .formatToParts(d).reduce((a: any, x) => (a[x.type] = x.value, a), {});
+      return (Number(parts.hour) % 24) * 60 + Number(parts.minute);
+    };
+    const wanted = wantedMin == null ? undefined : slots.find((sl) => slotMin(sl.startsAt) === wantedMin);
     if (wanted) {
       return `${dayName} at ${fmt(wanted.startsAt)} is OPEN — offer it and book it. ` +
         `Pass starts_at "${wanted.startsAt.toISOString()}" to book_service.`;
