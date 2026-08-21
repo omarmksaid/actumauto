@@ -152,7 +152,13 @@ async function main() {
         }
         if (tc.name === "transferCall") {
           console.log(`  [transfer] caller would now be connected to a human`);
-          results.push({ type: "tool_result", tool_use_id: tc.id, content: "Transferred." });
+          // The leg is GONE — end the simulated call, same as endCall. Letting the loop continue
+          // invited the model to keep talking ("I've transferred you..."), which looked like an
+          // agent bug but was the simulator being unfaithful: in production Vapi has already
+          // moved the caller and nobody is left to hear it.
+          ended = true;
+          results.push({ type: "tool_result", tool_use_id: tc.id,
+            content: "Transferred. The caller is no longer on your line. Say nothing further." });
           continue;
         }
         const out = await post("/inbound/tools", {

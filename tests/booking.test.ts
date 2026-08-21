@@ -200,3 +200,15 @@ test("reopen clears the terminal timestamps, not just the status", () => {
     assert.ok(new RegExp(`patch\\.${f} = null`).test(block), `reopen leaves ${f} set`);
   }
 });
+
+test("the chat simulator ends the call on transfer, like production does", () => {
+  // The simulator returned "Transferred." and kept looping, so the model happily said "I've
+  // transferred you to the team" — which looked like an agent bug but was the harness being
+  // unfaithful. In production Vapi has already moved the leg; nobody is there to hear it.
+  const SRC = readFileSync("scripts/chat.ts", "utf8");
+  const block = SRC.slice(SRC.indexOf('tc.name === "transferCall"'));
+  const body = block.slice(0, block.indexOf("continue;"));
+  assert.ok(/ended = true/.test(body), "transferCall doesn't end the simulated call");
+  assert.ok(/no longer on your line/i.test(body),
+    "the tool result doesn't tell the model the caller is gone");
+});

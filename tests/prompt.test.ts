@@ -218,10 +218,14 @@ test("the agent doesn't claim the transfer succeeded", () => {
     todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 0,
   };
   const p = buildInboundSystemPrompt(ctx, "soft");
-  assert.ok(/After calling transferCall, say NOTHING further/i.test(p),
+  assert.ok(/ONCE transferCall HAS RUN, YOUR TURN IS OVER/i.test(p),
     "the agent may still narrate after handing off the call");
-  assert.ok(/is a\s+claim you cannot make/i.test(p),
+  assert.ok(/claims you cannot make/i.test(p),
     "nothing explains why asserting the connection is wrong");
+  // The pre-transfer check-in gave the model a reason to speak again afterwards; it said
+  // "I've already transferred you". Both phrasings have to be ruled out explicitly.
+  assert.ok(/never after it/i.test(p),
+    "the check-in question isn't pinned to before the transfer");
 });
 
 test("a known caller's upcoming appointments reach the prompt with real ids", () => {
@@ -274,4 +278,23 @@ test("a caller with no upcoming appointments gets no appointment block", () => {
   const p = buildInboundSystemPrompt(ctx, "soft");
   assert.ok(!/THEIR UPCOMING APPOINTMENT/.test(p),
     "an empty appointment block is rendered, inviting the model to invent one");
+});
+
+test("the agent offers a beat before transferring, without asking permission", () => {
+  // A transfer announced and executed in one breath reads as being got rid of, and loses the
+  // second thing the caller rang about. But "is that OK?" invites a no the agent can't act on —
+  // it still cannot answer their question.
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "T", timezone: "America/Los_Angeles",
+    customerId: "cu", customerName: "Omar Said", customerLanguage: null,
+    vehicles: [], offerings: [], transferNumber: "+14085550111", greeting: null,
+    personaTemplate: null, identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 1, upcoming: [],
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(/anything else you need\s+while I have you/i.test(p), "no pre-transfer check-in");
+  assert.ok(/Never ask permission to transfer/i.test(p),
+    "the agent may ask permission and get a no it can't honour");
+  assert.ok(/Skip the check entirely when they've ASKED for a person, or they're angry/i.test(p),
+    "an angry caller is still made to sit through small talk");
 });
