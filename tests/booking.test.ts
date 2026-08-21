@@ -258,3 +258,25 @@ test("end-of-call never downgrades a booked call to answered", () => {
   assert.ok(/prior\?\.outcome === "booked" \? "booked" : outcome\.outcome/.test(SRC),
     "the end-of-call update can clobber outcome=booked");
 });
+
+test("the appointment funnel counts by when the visit happens, not when it was booked", () => {
+  // The funnel filtered appointments on created_at, so "today" counted every row WRITTEN today
+  // — including next Monday's booking — while omitting a visit booked last week that is
+  // happening right now. Membership has to be the scheduled time.
+  const SRC = readFileSync("src/routes/agent.ts", "utf8");
+  const fn = SRC.slice(SRC.indexOf('agentRoutes.get("/funnel"'), SRC.indexOf('agentRoutes.get("/calls"'));
+  assert.ok(/const when = x\.starts_at \?\? x\.created_at/.test(fn),
+    "the funnel doesn't prefer the scheduled time");
+  assert.ok(/const until =/.test(fn),
+    "the window has no upper bound, so every future booking leaks into every range");
+});
+
+test("in-service appointments have their own funnel stage", () => {
+  // Pending -> Confirmed -> Shown had no bucket for a car physically in the shop, so checked-in
+  // visits vanished from the funnel entirely: neither still-confirmed nor yet-completed.
+  const SRC = readFileSync("src/routes/agent.ts", "utf8");
+  const fn = SRC.slice(SRC.indexOf('agentRoutes.get("/funnel"'), SRC.indexOf('agentRoutes.get("/calls"'));
+  assert.ok(/in_service: a\.filter/.test(fn), "in_service is not counted");
+  const UI = readFileSync("web/app/(app)/dashboard/page.tsx", "utf8");
+  assert.ok(/label="In service"/.test(UI), "the funnel UI has no in-service stage");
+});

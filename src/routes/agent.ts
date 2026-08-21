@@ -89,9 +89,11 @@ agentRoutes.get("/funnel", async (c) => {
       .select("customer_id, outcome, duration_sec, metadata, created_at")
       .eq("company_id", companyId).eq("direction", "inbound")
       .gte("created_at", since.toISOString()),
+    // Fetch by BOOKED-AT or SCHEDULED-FOR, then filter below. A visit booked last week for
+    // today belongs in today's funnel; one booked today for next Monday does not.
     supabaseAdmin.from("appointments")
-      .select("status, created_at").eq("company_id", companyId)
-      .gte("created_at", since.toISOString()),
+      .select("status, created_at, starts_at").eq("company_id", companyId)
+      .or(`created_at.gte.${since.toISOString()},starts_at.gte.${since.toISOString()}`),
     supabaseAdmin.from("handoff_requests")
       .select("reason, status, transferred, created_at").eq("company_id", companyId),
   ]);
@@ -136,7 +138,26 @@ agentRoutes.get("/funnel", async (c) => {
     ? Math.round((now.getTime() - Math.min(...open.map((x) => new Date(x.created_at as string).getTime()))) / 60_000)
     : null;
 
-  const a = appts ?? [];
+  // The funnel answers "what is happening in this window", so membership is the SCHEDULED time.
+  // Filtering on created_at counted every row written today — including next Monday's booking —
+  // while leaving out a visit booked last week that is happening right now.
+  // The window needs an UPPER bound too. `since` alone lets every future booking through, so
+  // "today" counted Saturday's and Monday's visits and read identically to "this week".
+  // Ranges that look backwards (1w, 1m, ytd) end now; "today" ends at local midnight tonight.
+  // A funnel over a window should cover that whole window, including visits still ahead in it —
+  // a manager looking at "this week" wants Saturday's bookings counted. So the upper bound is
+  // the end of the range, not the present moment.
+  const until =
+    range === "1d" ? new Date(since.getTime() + 24 * 3600_000)
+    : range === "1w" ? new Date(since.getTime() + 14 * DAY)   // the week behind and the week ahead
+    : range === "1m" ? new Date(since.getTime() + 60 * DAY)
+    : new Date(now.getTime() + 365 * DAY);                    // ytd / all: everything on the books
+  const a = (appts ?? []).filter((x) => {
+    const when = x.starts_at ?? x.created_at;   // no firm time yet ⇒ fall back to when it was taken
+    if (when == null) return false;
+    const t = new Date(when as string);
+    return t >= since && t <= until;
+  });
   return c.json({
     range,
     inbound: {
@@ -155,8 +176,12 @@ agentRoutes.get("/funnel", async (c) => {
     appointments: {
       pending_confirmation: a.filter((x) => x.status === "pending_confirmation").length,
       confirmed: a.filter((x) => x.status === "confirmed").length,
+      // Cars physically in the shop. Without a bucket of their own they vanished from the
+      // funnel — checked in is neither still-confirmed nor yet-completed.
+      in_service: a.filter((x) => x.status === "in_service").length,
       shown: a.filter((x) => x.status === "shown").length,
       no_show: a.filter((x) => x.status === "no_show").length,
+      canceled: a.filter((x) => x.status === "canceled").length,
     },
     handoffs: {
       total: inRange.length,

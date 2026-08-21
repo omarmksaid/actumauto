@@ -47,7 +47,7 @@ export const demoFunnel = {
     label: String(h).padStart(2, "0"),
     count: h < 7 || h > 18 ? 0 : [1, 2, 3, 2, 4, 1, 2, 3, 1, 0, 1, 2][h - 7] ?? 0,
   })),
-  appointments: { pending_confirmation: 5, confirmed: 3, shown: 2, no_show: 1 },
+  appointments: { pending_confirmation: 5, confirmed: 3, in_service: 2, shown: 2, no_show: 1, canceled: 1 },
   handoffs: {
     total: 7, open: 2, oldest_open_min: 12, needs_callback: 1, failed_transfers: 1,
     by_reason: { where_is_my_car: 3, pricing: 2, requested_human: 1, complaint: 1 },

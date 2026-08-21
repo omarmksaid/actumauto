@@ -136,14 +136,21 @@ export default function Dashboard() {
       <div className="grid-2" style={{ marginTop: 16 }}>
         <div className="card card-pad">
           <div style={{ fontWeight: 650, marginBottom: 12 }}>Appointments funnel</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <FunnelStep n={a.pending_confirmation} label="Pending" accent />
             <span className="hint">›</span>
             <FunnelStep n={a.confirmed} label="Confirmed" />
             <span className="hint">›</span>
-            <FunnelStep n={a.shown} label="Shown" />
+            {/* Checked in is a real stage: neither still-confirmed nor yet-completed. Without
+                it, cars physically in the shop disappeared from the funnel. */}
+            <FunnelStep n={a.in_service ?? 0} label="In service" />
+            <span className="hint">›</span>
+            <FunnelStep n={a.shown} label="Completed" />
           </div>
-          <div className="hint" style={{ marginTop: 10 }}>No-shows: {a.no_show}</div>
+          <div className="hint" style={{ marginTop: 10 }}>
+            No-shows: {a.no_show}
+            {(a.canceled ?? 0) > 0 && ` · cancelled: ${a.canceled}`}
+          </div>
         </div>
 
         <div className="card card-pad">
