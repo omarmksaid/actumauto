@@ -91,14 +91,15 @@ export default function HandoffsPage() {
       <h1 className="page-title">Handoffs</h1>
       <p className="page-sub">
         Inbound callers the agent passed to a service employee — vehicle status, pricing, and
-        anything it isn&apos;t allowed to answer.
+        anything it isn&apos;t allowed to answer. Calls that reached a person close themselves;
+        what stays open is a caller who still needs a call back.
       </p>
       {isDemo && <div className="banner banner-warn" style={{ marginBottom: 16 }}>Demo data.</div>}
       {error && <div className="banner banner-error">{error}</div>}
 
       {stats && (
         <div className="grid-4" style={{ marginBottom: 16 }}>
-          <Stat label="Open" value={stats.handoffs.open} />
+          <Stat label="Needs attention" value={stats.handoffs.open} />
           <Stat label="Needs callback" value={stats.handoffs.needs_callback} warn={stats.handoffs.needs_callback > 0} />
           <Stat label="Inbound calls (30d)" value={stats.inbound.calls} />
           <Stat

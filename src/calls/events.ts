@@ -65,6 +65,20 @@ async function handleEndOfCall(msg: any): Promise<void> {
     metadata: { endedReason: msg.endedReason, analysis: msg.analysis ?? null },
   }).eq("id", call.id);
 
+  // A handoff row exists to make sure nobody falls through the cracks. Once Vapi confirms the
+  // leg actually moved to a human, there is nothing for an advisor to action — the advisor IS
+  // the next step. Leaving it open buries the rows that DO need work (a transfer that rang out,
+  // or a message taken because no transfer line is configured) in a pile of noise, which trains
+  // people to ignore the queue.
+  //
+  // Note this is decided by the call's OUTCOME, not by whether a transfer number was configured:
+  // "we tried to transfer" and "a human picked up" are different facts.
+  if (msg.endedReason === "assistant-forwarded-call") {
+    await supabaseAdmin.from("handoff_requests")
+      .update({ status: "resolved", resolved_at: new Date().toISOString() })
+      .eq("call_id", call.id).eq("status", "open");
+  }
+
   await recordCost({
     companyId: call.company_id, customerId: call.customer_id,
     category: "voice", amountUsd: costUsd,

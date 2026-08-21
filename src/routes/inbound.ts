@@ -997,6 +997,8 @@ async function logHandoff(args: any, pinned: PinnedCall): Promise<string> {
     reason: allowed.includes(reason) ? reason : "other",
     vehicle_hint: args.vehicle_hint ? String(args.vehicle_hint) : null,
     notes: args.notes ? String(args.notes) : null,
+    // Whether we ATTEMPTED a transfer. Whether one actually connected is only known at
+    // end-of-call, from Vapi's endedReason — see calls/events.ts, which resolves the row then.
     transferred: !!transferNumber,
   });
 

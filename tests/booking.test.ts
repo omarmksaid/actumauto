@@ -212,3 +212,28 @@ test("the chat simulator ends the call on transfer, like production does", () =>
   assert.ok(/no longer on your line/i.test(body),
     "the tool result doesn't tell the model the caller is gone");
 });
+
+test("a confirmed transfer resolves its handoff automatically", () => {
+  // A handoff row exists so nobody falls through the cracks. Once Vapi confirms the leg moved to
+  // a human, the advisor IS the next step and there is nothing to action — leaving it open
+  // buries the rows that DO need work (a transfer that rang out, a message taken because no
+  // transfer line is configured) and trains people to ignore the queue.
+  const SRC = readFileSync("src/calls/events.ts", "utf8");
+  assert.ok(/assistant-forwarded-call/.test(SRC),
+    "nothing keys off Vapi's forwarded-call outcome");
+  const block = SRC.slice(SRC.indexOf('msg.endedReason === "assistant-forwarded-call"'));
+  assert.ok(/handoff_requests/.test(block.slice(0, 400)), "the handoff row isn't resolved");
+  assert.ok(/\.eq\("status", "open"\)/.test(block.slice(0, 500)),
+    "resolving isn't scoped to open rows, so it would stamp already-closed ones");
+});
+
+test("handoff.transferred records the attempt, not the outcome", () => {
+  // It's set from whether a transfer number is CONFIGURED. A row therefore says "transferred"
+  // even if the advisor never picked up — which is exactly why the queue still matters.
+  const SRC = readFileSync("src/routes/inbound.ts", "utf8");
+  const block = fnBody("logHandoff");
+  assert.ok(/Whether we ATTEMPTED a transfer/.test(block),
+    "the attempt-vs-outcome distinction isn't documented where it misleads");
+  assert.ok(/transferred: !!transferNumber/.test(block),
+    "transferred is no longer derived from configuration — update the comment if this changed");
+});
