@@ -6,6 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { openWindow, spokenTime, ShopConfig } from "../src/scheduling/slots";
 
 const CFG: ShopConfig = {
@@ -36,4 +37,19 @@ test("survives the DST boundary", () => {
 
 test("a day with no configured hours is closed, not open-all-day", () => {
   assert.equal(openWindow({ ...CFG, hours: {} }, "2026-08-24"), null);
+});
+
+test("availability fetches the WHOLE day, not just the first few slots", () => {
+  // A 6-slot fetch meant "is 10am free?" answered "no" because 10am was never in the list —
+  // the shop was empty and a caller was told it was booked.
+  const src = readFileSync("src/routes/inbound.ts", "utf8");
+  const call = src.match(/availableSlots\(pinned\.companyId, cfg, date, mins, (\d+)\)/);
+  assert.ok(call, "couldn't find the availability call");
+  assert.ok(Number(call![1]) >= 50, `only fetches ${call![1]} slots — a later time will look booked`);
+});
+
+test("availability never claims times outside the returned list are full", () => {
+  const src = readFileSync("src/routes/inbound.ts", "utf8");
+  assert.ok(!/Any other time that day is full/.test(src),
+    "still tells the agent unlisted times are booked, which is false when the list is truncated");
 });

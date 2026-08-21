@@ -755,7 +755,9 @@ async function checkAvailability(args: any, pinned: PinnedCall): Promise<string>
   // was a Sunday. Resolving here removes a whole class of confidently-wrong answers.
   const date = resolveDate(rawDate, cfg.timezone);
   if (!date) return "Couldn't read that date — pass YYYY-MM-DD, a weekday name, or 'tomorrow'.";
-  const slots = await availableSlots(pinned.companyId, cfg, date, mins, 6);
+  // Fetch the WHOLE day: the caller may ask about any time, and truncating here makes a free
+  // slot look booked. Only the spoken reply is shortened.
+  const slots = await availableSlots(pinned.companyId, cfg, date, mins, 100);
 
   const dayName = new Intl.DateTimeFormat("en-US", { timeZone: cfg.timezone, weekday: "long", month: "short", day: "numeric" })
     .format(new Date(`${date}T12:00:00Z`));
@@ -772,13 +774,27 @@ async function checkAvailability(args: any, pinned: PinnedCall): Promise<string>
       `Tell them ${why} then, and offer these.`;
   }
   // Two or three read naturally aloud; a list of six does not.
-  const times = slots.slice(0, 3).map((s) =>
-    new Intl.DateTimeFormat("en-US", { timeZone: cfg.timezone, hour: "numeric", minute: "2-digit" })
-      .format(s.startsAt));
+  // If the caller named a time, answer THAT question first — telling them "we have 7, 7:30 or 8"
+  // when they asked about 10 and 10 is free is worse than useless.
+  const asked = String(args.time ?? "").trim();
+  const fmt = (d: Date) => new Intl.DateTimeFormat("en-US",
+    { timeZone: cfg.timezone, hour: "numeric", minute: "2-digit" }).format(d);
+
+  if (asked) {
+    const wanted = slots.find((sl) => fmt(sl.startsAt).toLowerCase() === asked.toLowerCase().replace(/\s+/g, " ").trim());
+    if (wanted) {
+      return `${dayName} at ${fmt(wanted.startsAt)} is OPEN — offer it and book it. ` +
+        `Pass starts_at "${wanted.startsAt.toISOString()}" to book_service.`;
+    }
+    const near = slots.slice(0, 3).map((sl) => fmt(sl.startsAt));
+    return `${dayName} at ${asked} is NOT available. Nearest open: ${near.join(", ")}. ` +
+      `Offer those.`;
+  }
+
+  const times = slots.slice(0, 4).map((sl) => fmt(sl.startsAt));
   return `${dayName} is the date — say exactly that, don't recalculate it. ` +
-    `ONLY these times are open: ${times.join(", ")}` +
-    (slots.length > 3 ? ` (${slots.length - 3} more later)` : "") +
-    `. Offer two or three of these. Any other time that day is full — do not offer it.`;
+    `${slots.length} slots open, earliest: ${times.join(", ")}. Offer two or three. ` +
+    `If they ask about a specific time, call check_availability again with that time to check it.`;
 }
 
 /** The caller's upcoming visits, so they can ask about, change, or cancel one. */
