@@ -154,12 +154,26 @@ const PRIVACY_RULE_KNOWN = [
 function transferRules(ctx: InboundContext): string {
   return [
     "HANDING OFF TO A PERSON — call log_handoff (to record why), then IMMEDIATELY transferCall.",
-    "log_handoff alone does NOT move the call; stopping there strands the caller. Do this when they:",
+    "log_handoff alone does NOT move the call; stopping there strands the caller. Transfer when they:",
     "- ask where their car is, if it's ready, or when it'll be done (you have no repair-order data);",
     "- ask what something costs, or about a bill, warranty, or insurance;",
-    "- have a complaint, are upset, or ask for a person;",
+    "- ask for a person, a manager, or to speak to someone;",
+    "- are angry, are describing a real grievance, or repeat a complaint after you've responded;",
     "- ask anything your tools can't answer.",
     "Say you're connecting them, briefly, then call both tools. Don't promise a person or a time.",
+    "",
+    "SOMEONE VENTING IS NOT AUTOMATICALLY A TRANSFER. If they're annoyed but haven't asked for a",
+    "person and haven't raised a specific problem, do NOT transfer on the first sentence:",
+    "- Acknowledge it once, briefly and without being defensive. Don't argue, don't explain why",
+    "  the shop is right, and never blame them or another department.",
+    "- Never apologise for something you can't verify, and never promise a fix, a callback, a",
+    "  refund, or that anyone will do anything.",
+    "- Then ask what they need today, and handle it if you can — booking a visit IS the help most",
+    "  of them called for. Solving it beats passing it on.",
+    "- If you ask them a question, WAIT for the answer. Asking what happened and transferring in",
+    "  the same breath is worse than not asking: they've been cut off mid-sentence.",
+    "- The moment it's a real grievance, they want a person, or they're still upset after you've",
+    "  acknowledged it once — stop and transfer. Do not try twice.",
   ].join("\n");
 }
 

@@ -156,3 +156,52 @@ test("a car in the shop is announced up front, with an invitation to ask", () =>
   assert.ok(/log_handoff and transfer/.test(p),
     "status questions about an in-shop car must still transfer");
 });
+
+test("venting is not treated as an instant transfer trigger", () => {
+  // From a real call: the caller said "your service sucks" and the agent asked "can you tell me
+  // what's been going on?" — then transferred in the SAME turn, without waiting. The caller was
+  // asked a question and cut off; they may well have been calling to book.
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "T", timezone: "America/Los_Angeles",
+    customerId: null, customerName: null, customerLanguage: null,
+    vehicles: [], offerings: [], transferNumber: "+14085550111", greeting: null,
+    personaTemplate: null, identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 0,
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(/NOT AUTOMATICALLY A TRANSFER/.test(p),
+    "frustration still routes straight to a human");
+  assert.ok(/WAIT for the answer/i.test(p),
+    "nothing stops the agent asking a question and transferring before it's answered");
+  assert.ok(/ask what they need today/i.test(p),
+    "the agent isn't told to find out what they actually called about");
+});
+
+test("de-escalation never invents an apology, a fix, or a promise", () => {
+  // Soft mode can't promise anything, and the agent has no service history — so it must not
+  // apologise for something it can't verify or commit anyone to a callback.
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "T", timezone: "America/Los_Angeles",
+    customerId: null, customerName: null, customerLanguage: null,
+    vehicles: [], offerings: [], transferNumber: "+14085550111", greeting: null,
+    personaTemplate: null, identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 0,
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(/never promise a fix, a callback, a/i.test(p), "the agent may promise a remedy");
+  assert.ok(/still upset after you've/i.test(p),
+    "no stop condition — the agent could keep de-escalating instead of transferring");
+});
+
+test("asking for a person still transfers immediately", () => {
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "T", timezone: "America/Los_Angeles",
+    customerId: null, customerName: null, customerLanguage: null,
+    vehicles: [], offerings: [], transferNumber: "+14085550111", greeting: null,
+    personaTemplate: null, identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 0,
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(/ask for a person, a manager, or to speak to someone/i.test(p),
+    "a direct request for a human is no longer an immediate transfer");
+});
