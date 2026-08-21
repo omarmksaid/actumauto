@@ -371,11 +371,28 @@ agentRoutes.patch("/appointments/:id", async (c) => {
   const b = await c.req.json<any>().catch(() => ({}));
   const patch: any = {};
 
-  if (b.action === "check_in") { patch.status = "in_service"; patch.checked_in_at = new Date().toISOString(); }
+  // Move the visit to right now AND check it in. Demoing the "your car is with us" greeting
+  // otherwise means editing timestamps by hand: the agent only says it when something is
+  // in_service, and an appointment sitting in next week's calendar reads as stale to everyone
+  // looking at it. One action so the calendar and the phone agent agree.
+  if (b.action === "start_now") {
+    const now = new Date();
+    patch.status = "in_service";
+    patch.checked_in_at = now.toISOString();
+    patch.starts_at = now.toISOString();
+    patch.ends_at = new Date(now.getTime() + 45 * 60_000).toISOString();
+  }
+  else if (b.action === "check_in") { patch.status = "in_service"; patch.checked_in_at = new Date().toISOString(); }
   else if (b.action === "complete") { patch.status = "shown"; patch.completed_at = new Date().toISOString(); patch.shown_at = new Date().toISOString(); }
   else if (b.action === "confirm") { patch.status = "confirmed"; }
   else if (b.action === "cancel") { patch.status = "canceled"; patch.canceled_at = new Date().toISOString(); }
   else if (b.action === "no_show") { patch.status = "no_show"; }
+  // Put a finished or cancelled visit back on the board — lets the same appointment drive the
+  // demo more than once instead of accumulating throwaway rows.
+  else if (b.action === "reopen") {
+    patch.status = "confirmed";
+    patch.checked_in_at = null; patch.completed_at = null; patch.shown_at = null; patch.canceled_at = null;
+  }
   else return c.json({ error: "unknown action" }, 422);
 
   const { data, error } = await supabaseAdmin.from("appointments")

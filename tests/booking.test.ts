@@ -177,3 +177,26 @@ test("merging unions the service list rather than replacing it", () => {
   assert.ok(/seen\.has\(o\.toLowerCase\(\)\)/.test(body),
     "duplicate ops aren't deduplicated case-insensitively");
 });
+
+test("start_now moves the appointment to the present and checks it in", () => {
+  // Demoing the "we have your car in with us" greeting needs an appointment that is BOTH
+  // in_service and dated now. Checking in alone leaves it sitting at its original time, which
+  // reads as stale on the calendar even though the agent would greet on it.
+  const SRC = readFileSync("src/routes/agent.ts", "utf8");
+  const h = SRC.slice(SRC.indexOf('agentRoutes.patch("/appointments/:id"'));
+  const block = h.slice(h.indexOf('b.action === "start_now"'), h.indexOf('b.action === "check_in"'));
+  assert.ok(/patch\.status = "in_service"/.test(block), "start_now doesn't set in_service");
+  assert.ok(/patch\.starts_at = now\.toISOString\(\)/.test(block), "start_now doesn't move the visit to now");
+  assert.ok(/patch\.checked_in_at/.test(block), "start_now doesn't stamp the check-in");
+});
+
+test("reopen clears the terminal timestamps, not just the status", () => {
+  // Leaving completed_at/canceled_at set would leave a row that says "confirmed" while carrying
+  // a completion time, and the same appointment couldn't cleanly drive the demo twice.
+  const SRC = readFileSync("src/routes/agent.ts", "utf8");
+  const h = SRC.slice(SRC.indexOf('b.action === "reopen"'));
+  const block = h.slice(0, h.indexOf("}"));
+  for (const f of ["checked_in_at", "completed_at", "shown_at", "canceled_at"]) {
+    assert.ok(new RegExp(`patch\\.${f} = null`).test(block), `reopen leaves ${f} set`);
+  }
+});

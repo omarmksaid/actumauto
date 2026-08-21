@@ -19,6 +19,8 @@ const STATUS: Record<string, { bg: string; fg: string; label: string }> = {
   in_service:           { bg: "var(--ok-wash)", fg: "var(--ok)", label: "in service" },
   shown:                { bg: "var(--bg)", fg: "var(--muted)", label: "completed" },
   no_show:              { bg: "var(--hot-wash)", fg: "var(--hot)", label: "no-show" },
+  // Without an entry a cancelled visit falls back to the confirmed style and reads as live.
+  canceled:             { bg: "var(--bg)", fg: "var(--muted)", label: "cancelled" },
 };
 
 export default function Calendar() {
@@ -219,11 +221,38 @@ function Detail({ a, onClose, act }: { a: any; onClose: () => void; act: (id: st
             <button className="btn btn-primary" onClick={() => act(a.id, "check_in")}>Check in</button>
           )}
           {a.status === "in_service" && <button className="btn btn-primary" onClick={() => act(a.id, "complete")}>Complete</button>}
+          {(a.status === "shown" || a.status === "no_show" || a.status === "canceled") && (
+            <button className="btn" onClick={() => act(a.id, "reopen")}>Reopen</button>
+          )}
           {a.status !== "shown" && a.status !== "no_show" && (
             <button className="btn btn-quiet" onClick={() => act(a.id, "cancel")}>Cancel</button>
           )}
           <button className="btn btn-quiet" style={{ marginLeft: "auto" }} onClick={onClose}>Close</button>
         </div>
+
+        {/* Bring the visit to now and check it in, so the phone agent greets this caller with
+            "we have your car in with us". Separated from the buttons above because it MOVES the
+            appointment — that's a bigger change than a status flip and shouldn't sit inline
+            with them. */}
+        {a.status !== "in_service" ? (
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+            <button className="btn" onClick={() => act(a.id, "start_now")}>
+              Move to now &amp; check in
+            </button>
+            <p className="hint" style={{ marginTop: 8, marginBottom: 0 }}>
+              Sets this visit to right now and marks the car in service. When {a.phone ?? "this caller"}{" "}
+              calls, the agent opens with the car being in the shop and offers to answer questions
+              about it.
+            </p>
+          </div>
+        ) : (
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+            <p className="hint" style={{ margin: 0 }}>
+              In the shop now. A call from {a.phone ?? "this customer's number"} is greeted with the
+              car being in service. Status questions still transfer to an advisor.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
