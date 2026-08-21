@@ -123,9 +123,16 @@ const PRIVACY_RULE_ANON = [
 ].join("\n");
 
 /** Privacy rule for an identified caller. */
-const PRIVACY_RULE_KNOWN =
-  "- Only discuss the vehicles listed below. If they mention a vehicle that isn't listed, don't " +
-  "assume it's theirs — offer to transfer them to the service team to sort it out.";
+const PRIVACY_RULE_KNOWN = [
+  "- You OPENED by asking whether you're speaking with the person below, because a phone number",
+  "  identifies a record, not a person. Until they confirm, say NOTHING about their vehicles,",
+  "  history, or appointments.",
+  "- If they say yes, carry on normally.",
+  "- If it's someone else on the same line (a spouse, a family member), do NOT read out the",
+  "  account. Help with general questions, and transfer anything needing the record.",
+  "- Only discuss the vehicles listed below. If they mention a vehicle that isn't listed, don't",
+  "  assume it's theirs — offer to transfer them to the service team to sort it out.",
+].join("\n");
 
 /** The transfer policy block (§16b) — the single most important inbound behavior. */
 function transferRules(ctx: InboundContext): string {
@@ -172,8 +179,9 @@ function identifiedBlock(ctx: InboundContext): string {
       "",
       `IN THE SHOP RIGHT NOW: their ${ctx.inService.vehicle} is checked in` +
         (ctx.inService.ops.length ? ` for ${ctx.inService.ops.join(", ")}` : "") + ".",
-      "You still have NO repair-order status — you can't say how far along it is or when it'll be",
-      "ready. Acknowledge the car is here, then transfer for anything about progress or pickup.",
+      "Once they've confirmed who they are, mention the car is with us — that's almost certainly",
+      "why they called. You still have NO repair-order status: you can't say how far along it is",
+      "or when it'll be ready. Transfer for anything about progress or pickup.",
     );
   }
 
@@ -330,20 +338,12 @@ export function buildInboundGreeting(ctx: InboundContext): string {
   }
   if (ctx.greeting?.trim()) return ctx.greeting.trim();
 
-  // Naming the caller AND their car is the one place identification is immediately visible, and
-  // it saves the "which vehicle?" round-trip that otherwise opens every call.
-  // Greet by name when we know them, then leave the floor open. Naming their vehicle here
-  // narrows the conversation before the caller has said what they want — the agent already has
-  // the car in its prompt and can raise it once their actual reason is handled.
+  // A phone number identifies a RECORD, not a person. Anyone in the household — a spouse, an
+  // adult child, an employee on a work line — may be calling. So we ASK rather than assert,
+  // and reveal nothing about the account until they confirm who they are.
   if (ctx.customerId && ctx.customerName) {
     const first = ctx.customerName.split(" ")[0];
-    // Their car is here right now — say so. They're almost certainly calling about it, and
-    // making them explain is the thing that annoys people about service lines.
-    if (ctx.inService) {
-      return `Hey ${first}, you've made it to the service center. I can see your ` +
-        `${ctx.inService.vehicle} is with us today — any questions about it?`;
-    }
-    return `Hey ${first}, you've made it to the service center. How can I help you today?`;
+    return `Welcome to ${ctx.companyName} service — am I speaking with ${first}?`;
   }
   // Unrecognized number: ask for the name in the greeting itself. It's the one thing we always
   // need from a caller with no record, and asking up front means we're never mid-booking with

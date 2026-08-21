@@ -63,15 +63,19 @@ test("the kill switch strips the agent down to a handoff", () => {
   assert.ok(!p.includes("RAV4"), "kill switch still exposed customer data");
 });
 
-test("greetings: name when known, never when anonymous", () => {
-  assert.ok(buildInboundGreeting(KNOWN).includes("Omar"));
+test("a known number ASKS whether it's that person, never assumes", () => {
+  const g = buildInboundGreeting(KNOWN);
+  // A phone number identifies a record, not a person — the household may share the line.
+  assert.ok(/am I speaking with Omar\?/i.test(g), `greeting asserts identity: "${g}"`);
   assert.ok(!buildInboundGreeting(ANON).includes("Omar"));
 });
 
-test("a car in the shop is mentioned up front", () => {
-  const g = buildInboundGreeting({ ...KNOWN,
-    inService: { vehicle: "2022 Toyota RAV4", since: null, ops: ["Oil change"] } });
-  assert.ok(/with us today/i.test(g), `greeting didn't mention the car: ${g}`);
+test("a car in the shop is NOT revealed before identity is confirmed", () => {
+  const ctx = { ...KNOWN, inService: { vehicle: "2022 Toyota RAV4", since: null, ops: ["Oil change"] } };
+  const g = buildInboundGreeting(ctx);
+  assert.ok(!/RAV4/.test(g), `greeting leaked the vehicle to an unconfirmed caller: "${g}"`);
+  // The agent still knows, and raises it once they confirm.
+  assert.ok(/IN THE SHOP RIGHT NOW/.test(buildInboundSystemPrompt(ctx, "soft")));
 });
 
 test("hours and today's date reach the prompt", () => {
