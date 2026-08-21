@@ -664,13 +664,65 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
     .from("customers").select("full_name").eq("id", pinned.customerId).maybeSingle();
   const customerName = cust?.full_name ?? null;
 
+  const opsList = Array.isArray(args.service_ops) ? args.service_ops.map(String) : [];
+
+  // MERGE INSTEAD OF DUPLICATING.
+  //
+  // book_service used to insert unconditionally. A caller who books an oil change and then says
+  // "add a tire rotation" produced two rows at the same time for the same car, and the advisor
+  // saw three 11 AM appointments for one visit. Retrying after a failed turn did the same.
+  //
+  // A live appointment for this customer + vehicle + start time is the SAME visit, so fold the
+  // new operations into it. Cancelled and completed rows are left alone — those are history.
+  if (startsAt) {
+    const { data: existing } = await supabaseAdmin
+      .from("appointments")
+      .select("id, service_ops, drop_off, notes")
+      .eq("company_id", pinned.companyId)
+      .eq("customer_id", pinned.customerId)
+      .eq("starts_at", startsAt.toISOString())
+      .in("status", ["pending_confirmation", "confirmed", "in_service"])
+      .limit(1)
+      .maybeSingle();
+
+    if (existing && (vehicleId ? true : !otherVehicle)) {
+      const prevOps = ((existing.service_ops as any)?.ops ?? []) as string[];
+      // Case-insensitive union, keeping the wording already stored.
+      const seen = new Set(prevOps.map((o) => o.toLowerCase()));
+      const mergedOps = [...prevOps, ...opsList.filter((o) => !seen.has(o.toLowerCase()))];
+      const added = mergedOps.length - prevOps.length;
+
+      await supabaseAdmin.from("appointments").update({
+        service_ops: { ops: mergedOps },
+        drop_off: ["waiting", "dropping_off"].includes(args.drop_off) ? args.drop_off : existing.drop_off,
+        notes: buildAppointmentNote({
+          customerName: customerName ?? "Caller",
+          phone: pinned.callerNumber,
+          vehicle: vehicleLabel ?? otherVehicle ?? null,
+          vehicleOnFile: !!vehicleId,
+          ops: mergedOps,
+          dropOff: ["waiting", "dropping_off"].includes(args.drop_off) ? args.drop_off : String(existing.drop_off ?? "unknown"),
+          when: spokenTime(startsAt, cfg.timezone),
+          agentNotes: String(args.notes ?? "").trim(),
+        }),
+      }).eq("id", existing.id);
+
+      return added > 0
+        ? `Added ${opsList.join(" and ")} to their existing ${spokenTime(startsAt, cfg.timezone)} ` +
+          `appointment — it's ONE visit, not a second booking. Say you've added it to the same ` +
+          `appointment. Do NOT say they have two.`
+        : `They already have that appointment at ${spokenTime(startsAt, cfg.timezone)} with the ` +
+          `same work. Nothing changed. Confirm the existing booking; do NOT say you made another.`;
+    }
+  }
+
   const booking = getBookingProvider();
   const result = await booking.createAppointment({
     companyId: pinned.companyId,
     customerId: pinned.customerId,
     vehicleId,
     preferredTime,
-    serviceOps: Array.isArray(args.service_ops) ? args.service_ops.map(String) : [],
+    serviceOps: opsList,
     dropOff: ["waiting", "dropping_off"].includes(args.drop_off) ? args.drop_off : "unknown",
     startsAt,
     durationMin: Number(args.service_minutes) > 0 ? Number(args.service_minutes) : 45,
@@ -679,7 +731,7 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
       phone: pinned.callerNumber,
       vehicle: vehicleLabel ?? otherVehicle ?? null,
       vehicleOnFile: !!vehicleId,
-      ops: Array.isArray(args.service_ops) ? args.service_ops.map(String) : [],
+      ops: opsList,
       dropOff: ["waiting", "dropping_off"].includes(args.drop_off) ? args.drop_off : "unknown",
       when: startsAt ? spokenTime(startsAt, cfg.timezone) : preferredTime,
       agentNotes: String(args.notes ?? "").trim(),

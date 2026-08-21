@@ -154,3 +154,26 @@ test("the caller's real vehicle ids reach the prompt", () => {
   assert.ok(p.includes("id=8f3c1e22-0000-4000-8000-000000000002"), "Tacoma id missing from prompt");
   assert.ok(/never invent one/i.test(p), "the model isn't told to use these ids verbatim");
 });
+
+test("a second booking at the same time merges instead of creating a duplicate", () => {
+  // From a real call: the caller booked an oil change, then agreed to add a tire rotation. Two
+  // rows landed at 11:00 AM for the same car, and the calendar showed three 11 AM appointments
+  // for one visit. Retrying a failed booking did the same thing.
+  const body = fnBody("bookService");
+  assert.ok(/MERGE INSTEAD OF DUPLICATING/.test(body), "no merge path in bookService");
+  assert.ok(/\.eq\("starts_at", startsAt\.toISOString\(\)\)/.test(body),
+    "the existing-appointment lookup isn't keyed on the start time");
+  assert.ok(/\.in\("status", \["pending_confirmation", "confirmed", "in_service"\]\)/.test(body),
+    "the merge doesn't restrict to live appointments — cancelled visits are history");
+  assert.ok(/it's ONE visit, not a second booking/.test(body),
+    "the agent isn't told the merge was not a new booking");
+});
+
+test("merging unions the service list rather than replacing it", () => {
+  // Replacing would silently drop the oil change when the tire rotation was added, and the
+  // advisor would never know the car was supposed to get both.
+  const body = fnBody("bookService");
+  assert.ok(/mergedOps/.test(body), "no merged operation list");
+  assert.ok(/seen\.has\(o\.toLowerCase\(\)\)/.test(body),
+    "duplicate ops aren't deduplicated case-insensitively");
+});
