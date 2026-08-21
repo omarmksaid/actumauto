@@ -298,3 +298,49 @@ test("the agent offers a beat before transferring, without asking permission", (
   assert.ok(/Skip the check entirely when they've ASKED for a person, or they're angry/i.test(p),
     "an angry caller is still made to sit through small talk");
 });
+
+test("the agent is told to call endCall, not just say goodbye", () => {
+  // In production the call never hung up — the agent said goodbye and the line stayed open with
+  // the caller sitting in billed silence. "END THE CALL" never named the tool that does it.
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "T", timezone: "America/Los_Angeles",
+    customerId: "cu", customerName: "Omar Said", customerLanguage: null,
+    vehicles: [], offerings: [], transferNumber: null, greeting: null, personaTemplate: null,
+    identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 1, upcoming: [],
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(/CALL THE endCall TOOL/.test(p), "the prompt never names endCall");
+  assert.ok(/Saying goodbye does NOT hang up/.test(p),
+    "nothing explains that a closing line leaves the line open");
+});
+
+test("the agent doesn't narrate its own tool calls", () => {
+  // "Hold on a sec" on every turn — the filler takes longer than the lookup it covers.
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "T", timezone: "America/Los_Angeles",
+    customerId: "cu", customerName: "Omar Said", customerLanguage: null,
+    vehicles: [], offerings: [], transferNumber: null, greeting: null, personaTemplate: null,
+    identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 1, upcoming: [],
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(/Do NOT narrate your own work/.test(p), "filler narration isn't forbidden");
+});
+
+test("an unfamiliar name is read back before it's saved", () => {
+  // A caller saying "Aya Elarid" was stored as "Alarid Elirid". A name is the one field that
+  // can't be inferred from context and the one an advisor needs to find them later.
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "T", timezone: "America/Los_Angeles",
+    customerId: null, customerName: null, customerLanguage: null,
+    vehicles: [], offerings: [], transferNumber: null, greeting: null, personaTemplate: null,
+    identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 0, upcoming: [],
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(/Names come through the transcript badly/.test(p), "no name-confirmation rule");
+  assert.ok(/use their correction/.test(p), "the agent isn't told to accept the correction");
+  // A real caller's name must not end up baked into every prompt.
+  assert.ok(!/Elarid/i.test(p), "a real caller's name is hardcoded in the prompt");
+});

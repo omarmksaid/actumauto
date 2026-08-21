@@ -344,15 +344,21 @@ export function buildInboundAssistant(ctx: InboundContext, voice: { provider: st
     // nova-2-phonecall is tuned for 8kHz telephony and is materially faster than the multilingual
     // model, which was costing ~900ms per turn. `smartFormat` cleans up numbers and times, which
     // matters here because callers say "9 AM" and "628-358-7659".
+    // nova-3 handles proper nouns markedly better than nova-2-phonecall, which mangled a caller
+    // spelling out "Aya Elarid" into "Alarid Elirid". A name is the one field we cannot guess
+    // from context and the one an advisor needs right — worth the small latency difference.
     transcriber: {
       provider: "deepgram",
-      model: "nova-2-phonecall",
+      model: "nova-3",
       language: "en",
       smartFormat: true,
       // Cut the pause we wait for before deciding the caller has finished. Vapi's default errs
       // long; a service call is short exchanges, not monologues.
       endpointing: 150,
     },
+    // A caller who goes quiet should not sit on an open, billed line. Vapi's default is
+    // generous; a service call has no reason to hold 30s of silence.
+    silenceTimeoutSeconds: 20,
     maxDurationSeconds: 900,                     // inbound runs longer than a reminder call
     // Speak the first chunk as soon as a sentence is ready instead of waiting for the whole
     // response — the largest perceived-latency win, since 1.6s of LLM time is otherwise silence.
