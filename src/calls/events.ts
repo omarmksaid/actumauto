@@ -57,10 +57,17 @@ async function handleEndOfCall(msg: any): Promise<void> {
   const costUsd = typeof msg.cost === "number" ? msg.cost : (durationSec / 60) * RATES.VOICE_PER_MIN;
   const outcome = deriveOutcome(msg);
 
+  // book_service already stamped outcome="booked" when it actually booked, from first-hand
+  // knowledge. deriveOutcome falls back to "answered", which would erase that — so never
+  // downgrade a call that produced a booking.
+  const { data: prior } = await supabaseAdmin
+    .from("calls").select("outcome").eq("id", call.id).maybeSingle();
+  const finalOutcome = prior?.outcome === "booked" ? "booked" : outcome.outcome;
+
   await supabaseAdmin.from("calls").update({
     recording_url: recordingUrl,
     duration_sec: durationSec,
-    outcome: outcome.outcome,
+    outcome: finalOutcome,
     cost_usd: Number(costUsd.toFixed(4)),
     metadata: { endedReason: msg.endedReason, analysis: msg.analysis ?? null },
   }).eq("id", call.id);

@@ -237,3 +237,24 @@ test("handoff.transferred records the attempt, not the outcome", () => {
   assert.ok(/transferred: !!transferNumber/.test(block),
     "transferred is no longer derived from configuration — update the comment if this changed");
 });
+
+test("a successful booking marks the call as booked", () => {
+  // "Booked from a call" read zero while eight appointments sat in the table. The outcome was
+  // inferred at end-of-call from Vapi's analysis.structuredData.booked, which requires an
+  // analysisPlan the assistant never sends — so it was always undefined. book_service knows
+  // first-hand that it booked; it shouldn't ask a model to remember.
+  const body = fnBody("bookService");
+  assert.ok(/markCallBooked\(pinned\.callId\)/.test(body),
+    "a successful booking doesn't record the outcome on the call");
+  // The merge path is a booking too — the caller added work on this call.
+  assert.equal((body.match(/markCallBooked\(pinned\.callId\)/g) ?? []).length, 2,
+    "the merge path doesn't mark the call booked");
+});
+
+test("end-of-call never downgrades a booked call to answered", () => {
+  // deriveOutcome falls back to "answered". Without a guard it would erase the outcome
+  // book_service already recorded, putting the metric back at zero.
+  const SRC = readFileSync("src/calls/events.ts", "utf8");
+  assert.ok(/prior\?\.outcome === "booked" \? "booked" : outcome\.outcome/.test(SRC),
+    "the end-of-call update can clobber outcome=booked");
+});

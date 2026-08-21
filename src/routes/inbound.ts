@@ -78,6 +78,19 @@ function buildAppointmentNote(a: {
   return lines.join("\n");
 }
 
+/**
+ * Record that this call produced a booking. Best-effort: a failure here must never surface as a
+ * booking failure to the caller, who is already booked.
+ */
+async function markCallBooked(callId: string | null): Promise<void> {
+  if (!callId) return;
+  try {
+    await supabaseAdmin.from("calls").update({ outcome: "booked" }).eq("id", callId);
+  } catch {
+    // Metrics are not worth failing a confirmed appointment over.
+  }
+}
+
 /** Parse "2026-08-22T10:00" as local time in the given zone, not the server's. */
 function localTimeToInstant(raw: string, tz: string): Date {
   const naive = new Date(`${raw.replace(" ", "T")}${raw.length <= 16 ? ":00" : ""}Z`);
@@ -707,6 +720,8 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
         }),
       }).eq("id", existing.id);
 
+      await markCallBooked(pinned.callId);
+
       return added > 0
         ? `Added ${opsList.join(" and ")} to their existing ${spokenTime(startsAt, cfg.timezone)} ` +
           `appointment — it's ONE visit, not a second booking. Say you've added it to the same ` +
@@ -737,6 +752,14 @@ async function bookService(args: any, pinned: PinnedCall): Promise<string> {
       agentNotes: String(args.notes ?? "").trim(),
     }),
   });
+
+  // Mark the CALL as having produced a booking.
+  //
+  // This used to be inferred at end-of-call from Vapi's analysis.structuredData.booked — which
+  // requires an analysisPlan we never send, so it was always undefined and "Booked from a call"
+  // read zero while appointments piled up. We know the answer here, first-hand, without asking
+  // a model to remember what happened.
+  await markCallBooked(pinned.callId);
 
   // Mode-gated wording: in soft mode this promises a confirmation, never a firm slot (§2).
   return result.confirmationText;
