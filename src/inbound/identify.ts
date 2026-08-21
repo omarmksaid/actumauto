@@ -58,6 +58,8 @@ export interface InboundContext {
   upcoming: { id: string; when: string; vehicle: string; ops: string[]; unscheduled: boolean }[];
   /** Diagnostics: how many customers matched the caller ID (0, 1, or >1 ⇒ ambiguous). */
   matchCount: number;
+  /** False when the caller withheld their number — we then have no way to call them back. */
+  hasCallerId: boolean;
 }
 
 /**
@@ -111,6 +113,7 @@ export async function resolveInboundContext(
     inService: null,
     upcoming: [],
     matchCount: Number(row.match_count ?? 0),
+    hasCallerId: !!(fromNumber && fromNumber.trim() && fromNumber.trim().toLowerCase() !== "anonymous"),
   };
 
   // Kill switch on, or anonymous: return WITHOUT loading customer data. Nothing

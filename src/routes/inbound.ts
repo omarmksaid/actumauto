@@ -91,6 +91,19 @@ async function markCallBooked(callId: string | null): Promise<void> {
   }
 }
 
+/**
+ * A spoken phone number to E.164, or null if it isn't a plausible US number.
+ *
+ * Deliberately strict: a half-heard number stored as a contact is worse than no number, because
+ * an advisor will call it and reach a stranger.
+ */
+function normalizePhone(raw: string): string | null {
+  const d = raw.replace(/\D/g, "");
+  if (d.length === 10) return `+1${d}`;
+  if (d.length === 11 && d.startsWith("1")) return `+${d}`;
+  return null;
+}
+
 /** Parse "2026-08-22T10:00" as local time in the given zone, not the server's. */
 function localTimeToInstant(raw: string, tz: string): Date {
   const naive = new Date(`${raw.replace(" ", "T")}${raw.length <= 16 ? ":00" : ""}Z`);
@@ -525,13 +538,34 @@ async function registerCustomer(args: any, pinned: PinnedCall): Promise<string> 
     return await attachVehicle(args, pinned, fullName, "updated");
   }
 
+  // Caller ID is the number they're calling FROM — never one the model states, because a spoken
+  // number must not be able to pull up someone else's record.
+  //
+  // When the caller ID is WITHHELD there is nothing to store, and a customer with no phone can't
+  // be called back to confirm their soft booking and is anonymous again on every future call. A
+  // number they volunteer is safe HERE and only here: it lands on a record we are creating, so
+  // the worst case is a new row with a wrong number — never access to an existing customer.
+  const spoken = normalizePhone(String(args.callback_number ?? ""));
+  const phone = pinned.callerNumber ?? spoken;
+
+  // No caller ID and no number given: refuse rather than create a customer nobody can reach.
+  // The advisor has to call to confirm a soft booking, and this caller would also be anonymous
+  // on every future call. Prompt guidance alone wasn't enough — the model registered first and
+  // reached the rule afterwards — so the tool enforces it, like the vehicle gate.
+  if (!phone) {
+    return "FAILED — no caller ID for this call and no callback number, so nothing can be " +
+      "confirmed afterwards. Do NOT say they're registered. Ask: \"What's the best number to " +
+      "reach you on?\" then call register_customer again with callback_number.";
+  }
+
   const { data: created, error } = await supabaseAdmin.from("customers").insert({
     company_id: pinned.companyId,
     full_name: fullName,
-    phone: pinned.callerNumber,          // the number they're calling from, NOT one the model states
+    phone,
     customer_type: "new",
     created_on_call_id: pinned.callId,
-    notes: "Created by the phone assistant during an inbound call — details unverified.",
+    notes: "Created by the phone assistant during an inbound call — details unverified." +
+      (!pinned.callerNumber && spoken ? " Caller ID withheld; number given verbally." : ""),
   }).select("id").single();
 
   if (error || !created) {

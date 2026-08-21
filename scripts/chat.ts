@@ -3,6 +3,7 @@
  *
  *   npx tsx scripts/chat.ts                 # as a known caller (first customer on file)
  *   npx tsx scripts/chat.ts --anon          # as an unrecognized caller
+ *   npx tsx scripts/chat.ts --blocked       # caller ID withheld (no number at all)
  *   npx tsx scripts/chat.ts --from +1408…   # as a specific number
  *   npx tsx scripts/chat.ts --prompt        # print the system prompt and exit
  *   npx tsx scripts/chat.ts --keep          # keep the call row (with duration) for dashboards
@@ -46,6 +47,7 @@ async function post(path: string, body: any) {
 async function main() {
   const args = process.argv.slice(2);
   const anon = args.includes("--anon");
+  const blocked = args.includes("--blocked");   // caller ID withheld, not merely unrecognized
   const doCleanup = args.includes("--cleanup");
   const promptOnly = args.includes("--prompt");
   // Keep the call row so it shows up on the dashboard (with a real duration) instead of being
@@ -62,7 +64,7 @@ async function main() {
   const { data: num } = await sb.from("phone_numbers").select("e164").eq("enabled", true).limit(1).single();
   if (!num) { console.error("No enabled phone_numbers row — the agent can't resolve a dealership."); process.exit(1); }
 
-  let from: string;
+  let from: string | null;
   if (fromFlag >= 0) {
     const raw = args[fromFlag + 1];
     if (!raw) { console.error("--from needs a number, e.g. --from 628-358-7659"); process.exit(1); }
@@ -71,6 +73,10 @@ async function main() {
       console.error(`could not read "${raw}" as a phone number (want 10 digits, or 11 starting with 1)`);
       process.exit(1);
     }
+  } else if (blocked) {
+    // Caller ID withheld — a DIFFERENT case from an unrecognized number. We have no way to
+    // call them back, so the agent has to ask for one before it can book.
+    from = null;
   } else if (anon) {
     from = "+15550009999";
   } else {
@@ -80,8 +86,11 @@ async function main() {
 
   // Report what the lookup will actually do, so a "why didn't it know me?" is answerable up front.
   const { data: matches } = await sb.from("customers").select("full_name, phone");
-  const digits = from.replace(/\D/g, "").slice(-10);
-  const hits = (matches ?? []).filter((c: any) => (c.phone ?? "").replace(/\D/g, "").slice(-10) === digits);
+  // A withheld caller ID has no digits to match on — nobody can be identified.
+  const digits = (from ?? "").replace(/\D/g, "").slice(-10);
+  const hits = digits
+    ? (matches ?? []).filter((c: any) => (c.phone ?? "").replace(/\D/g, "").slice(-10) === digits)
+    : [];
 
   // Prefix marks these as simulated: cleanup runs on exit, but a hard kill (Ctrl-C twice,
   // crash) can strand rows, and an untagged row is indistinguishable from a real call in the
@@ -114,7 +123,7 @@ async function main() {
   const who = hits.length === 1 ? `identified as ${hits[0].full_name}`
             : hits.length > 1 ? `AMBIGUOUS — ${hits.length} customers share this number, so the agent treats it as anonymous`
             : "not on file — anonymous";
-  console.log(`\n  dialing ${num.e164} from ${from}`);
+  console.log(`\n  dialing ${num.e164} from ${from ?? "(caller ID withheld)"}`);
   console.log(`  ${who}`);
   console.log(`  tools: ${tools.map((t: any) => t.name).join(", ")}\n`);
   console.log(`  AGENT: ${assistant.firstMessage}\n`);

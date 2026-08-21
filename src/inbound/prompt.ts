@@ -111,6 +111,12 @@ const CLOSING_RULES = [
  * number is equally a long-standing customer on a shared line, a blocked ID, or a new phone —
  * and telling a ten-year customer they're new is both wrong and audibly wrong.
  */
+function anonPrivacyRule(hasCallerId: boolean): string {
+  return PRIVACY_RULE_ANON + (hasCallerId
+    ? "\n- We DO have the number they're calling from, so don't ask for a phone number."
+    : "\n- THEIR CALLER ID IS WITHHELD — we have no number for them at all.");
+}
+
 const PRIVACY_RULE_ANON = [
   "- IMPORTANT: this caller's number isn't on file, so you have NO record for them — no vehicles,",
   "  no history. Never speculate about what they drive or claim to look them up. Do NOT tell them",
@@ -122,9 +128,17 @@ const PRIVACY_RULE_ANON = [
   "  for what a car is due for. Answer the question they actually called with FIRST.",
   "- ONLY when it's relevant — they're booking, or you need it to answer — ask for the car's year,",
   "  make, and model. Don't collect it just to have it.",
+  "- THEIR CALLER ID IS WITHHELD if the line below says so. To book, you then also need a number",
+  "  to reach them on — the team can't confirm an appointment they can't call. Ask once, plainly:",
+  "  \"What's the best number to reach you on?\" and pass it as callback_number. If they won't",
+  "  give one, say the team can't confirm without it and offer to transfer instead.",
   "- TO BOOK, you need their full name and the car. If they ALREADY gave you a first and last",
   "  name — including in the very first thing they said — you HAVE it. Do not ask again. Only",
   "  ask for a surname when all you were given is a first name.",
+  "- Mileage is OPTIONAL. Never hold up a booking for it, and never ask twice. Take it if they",
+  "  offer it; otherwise book without it.",
+  "- Never assume the make. They may drive anything — ask \"what do you drive?\", not \"which",
+  "  Toyota?\", and use the make they actually say.",
   "- The moment you have a name and the car, call register_customer — BEFORE check_availability.",
   "  Availability fails without a record, and the caller hears you ask for details they already",
   "  gave. Once registered, check_availability and book_service work exactly as they would for",
@@ -397,7 +411,7 @@ export function buildInboundSystemPrompt(ctx: InboundContext, bookingMode: Booki
   // ── DYNAMIC half: differs per call, so everything above it stays cacheable ──
   const dynamic = [
     "── THIS CALL (these override the general rules above) ──",
-    ctx.customerId ? PRIVACY_RULE_KNOWN : PRIVACY_RULE_ANON,
+    ctx.customerId ? PRIVACY_RULE_KNOWN : anonPrivacyRule(ctx.hasCallerId !== false),
     "",
     `TODAY IS ${ctx.todayLabel}.`,
     "",

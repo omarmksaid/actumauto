@@ -116,6 +116,11 @@ function toolDefinitions(ctx: InboundContext) {
           type: "object",
           properties: {
             full_name: { type: "string", description: "First and last name, as they said it." },
+            callback_number: {
+              type: "string",
+              description: "ONLY when their caller ID is withheld and you asked for a number to " +
+                "reach them on. Never pass a number for a caller whose ID we already have.",
+            },
             make: { type: "string" },
             model: { type: "string" },
             year: { type: "number" },

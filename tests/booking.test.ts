@@ -310,3 +310,27 @@ test("the calls endpoint surfaces query errors instead of returning an empty lis
   assert.ok(/if \(error\) return c\.json\(\{ error: error\.message \}, 500\)/.test(fn),
     "a failed calls query still renders as an empty list");
 });
+
+test("a caller with no caller ID can't be registered without a callback number", () => {
+  // A blocked caller ID meant phone=null on the new customer: the advisor couldn't call to
+  // confirm the soft booking, and the caller would be anonymous on every future call. Prompt
+  // guidance alone didn't hold — the model registered first and read the rule afterwards — so
+  // the tool refuses, like the vehicle-confirmation gate.
+  const body = fnBody("registerCustomer");
+  assert.ok(/if \(!phone\)/.test(body), "registration proceeds with no reachable number");
+  assert.ok(/FAILED — no caller ID for this call and no callback number/.test(body),
+    "the refusal doesn't tell the agent what to ask for");
+  assert.ok(/pinned\.callerNumber \?\? spoken/.test(body),
+    "a spoken number could override a real caller ID");
+});
+
+test("a spoken callback number is validated before it's stored", () => {
+  // A half-heard number is worse than none: an advisor will call it and reach a stranger.
+  const SRC = readFileSync("src/routes/inbound.ts", "utf8");
+  const fn = fnBody("normalizePhone");
+  assert.ok(fn, "no phone normalizer");
+  assert.ok(/d\.length === 10/.test(fn) && /return null/.test(fn),
+    "the normalizer accepts implausible numbers");
+  assert.ok(/callback_number/.test(readFileSync("src/inbound/assistant.ts", "utf8")),
+    "callback_number isn't in the register_customer schema, so the model can't send it");
+});
