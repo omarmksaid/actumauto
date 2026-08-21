@@ -339,8 +339,29 @@ test("an unfamiliar name is read back before it's saved", () => {
     todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 0, upcoming: [],
   };
   const p = buildInboundSystemPrompt(ctx, "soft");
-  assert.ok(/Names come through the transcript badly/.test(p), "no name-confirmation rule");
-  assert.ok(/use their correction/.test(p), "the agent isn't told to accept the correction");
+  assert.ok(/read it back once/.test(p), "no name-confirmation rule");
+  assert.ok(/take their correction verbatim/.test(p), "the agent isn't told to accept the correction");
+  // From a real call: the caller spelled "E l a r i d" and the agent read back "Elirid", got a
+  // yes to a name she never said, and stored it looking verified.
+  assert.ok(/those letters ARE the name/.test(p), "a spelled-out name isn't treated as definitive");
+  assert.ok(/Never confirm a name back with different letters/.test(p),
+    "the agent may still read back a spelling different from the one it was given");
   // A real caller's name must not end up baked into every prompt.
   assert.ok(!/Elarid/i.test(p), "a real caller's name is hardcoded in the prompt");
+});
+
+test("no real caller's name is baked into the prompt", () => {
+  // The spelling example needs a name; it must not be one from an actual call, or it ships in
+  // every anonymous caller's prompt.
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "T", timezone: "America/Los_Angeles",
+    customerId: null, customerName: null, customerLanguage: null,
+    vehicles: [], offerings: [], transferNumber: null, greeting: null, personaTemplate: null,
+    identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 0, upcoming: [],
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  for (const name of ["Elarid", "Elirid", "Alarid"]) {
+    assert.ok(!new RegExp(name, "i").test(p), `a real caller's name (${name}) is in the prompt`);
+  }
 });

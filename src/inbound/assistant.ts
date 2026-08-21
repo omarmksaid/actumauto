@@ -53,6 +53,13 @@ function toolDefinitions(ctx: InboundContext) {
   // call would arrive unauthenticated (same failure mode as the phone-number config, see SETUP).
   const server = { url, headers: { "x-vapi-secret": env.VAPI_WEBHOOK_SECRET } };
 
+  // Suppress Vapi's spoken filler while a tool runs. Left to the model, a real call produced
+  // "Just a sec." then "Hold on a sec." as separate utterances before a single lookup, and
+  // "Hold on a sec." again on the next one. Our tools return in well under a second, so the
+  // filler takes longer than the work it covers. An explicit empty request-start message beats
+  // a prompt rule the model can ignore — attached to every function tool below.
+  const quiet = [{ type: "request-start", content: "" }];
+
   // With the kill switch on the agent must not answer anything, so the services tool is withheld.
   const tools: any[] = ctx.agentEnabled ? [
     {
@@ -70,6 +77,7 @@ function toolDefinitions(ctx: InboundContext) {
         },
       },
       server,
+      messages: quiet,
     },
   ] : [];
 
@@ -97,6 +105,7 @@ function toolDefinitions(ctx: InboundContext) {
         },
       },
       server,
+      messages: quiet,
     });
   }
 
@@ -130,6 +139,7 @@ function toolDefinitions(ctx: InboundContext) {
         },
       },
       server,
+      messages: quiet,
     });
   }
 
@@ -170,6 +180,7 @@ function toolDefinitions(ctx: InboundContext) {
           },
         },
         server,
+        messages: quiet,
       },
       {
         type: "function",
@@ -205,6 +216,7 @@ function toolDefinitions(ctx: InboundContext) {
           },
         },
         server,
+        messages: quiet,
       }
     );
   }
@@ -233,11 +245,12 @@ function toolDefinitions(ctx: InboundContext) {
         },
       },
       server,
+      messages: quiet,
     });
   }
 
   // Recording the handoff works in both modes.
-  tools.push(HANDOFF_TOOL(server));
+  tools.push({ ...HANDOFF_TOOL(server), messages: quiet });
 
   // Vapi's NATIVE transfer. Only this actually moves the call leg; without it the agent says
   // "connecting you now" and the caller sits there — which is worse than refusing outright.
@@ -266,6 +279,7 @@ function toolDefinitions(ctx: InboundContext) {
           parameters: { type: "object", properties: {} },
         },
         server,
+        messages: quiet,
       },
       {
         type: "function",
@@ -276,6 +290,7 @@ function toolDefinitions(ctx: InboundContext) {
           parameters: { type: "object", properties: {} },
         },
         server,
+        messages: quiet,
       },
       {
         type: "function",
@@ -286,6 +301,7 @@ function toolDefinitions(ctx: InboundContext) {
           parameters: { type: "object", properties: {} },
         },
         server,
+        messages: quiet,
       },
       {
         type: "function",
@@ -303,6 +319,7 @@ function toolDefinitions(ctx: InboundContext) {
           },
         },
         server,
+        messages: quiet,
       },
     );
   }

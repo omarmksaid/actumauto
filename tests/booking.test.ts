@@ -334,3 +334,14 @@ test("a spoken callback number is validated before it's stored", () => {
   assert.ok(/callback_number/.test(readFileSync("src/inbound/assistant.ts", "utf8")),
     "callback_number isn't in the register_customer schema, so the model can't send it");
 });
+
+test("every function tool suppresses Vapi's spoken filler", () => {
+  // A real call produced "Just a sec." and "Hold on a sec." as separate utterances before one
+  // lookup. A prompt rule alone didn't hold, so each tool carries an explicit empty
+  // request-start message — the tools return faster than the filler takes to say.
+  const SRC = readFileSync("src/inbound/assistant.ts", "utf8");
+  assert.ok(/const quiet = \[\{ type: "request-start", content: "" \}\]/.test(SRC),
+    "no quiet request-start message defined");
+  assert.ok(/\.\.\.HANDOFF_TOOL\(server\), messages: quiet/.test(SRC),
+    "log_handoff is built separately and still narrates");
+});
