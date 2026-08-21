@@ -10,7 +10,10 @@
     "typecheck": "tsc --noEmit",
     "preflight": "tsx scripts/preflight.ts",
     "dev:all": "npm run dev & (cd web && npm run dev) & wait",
-    "stop": "pkill -f 'tsx watch src/index.ts' ; pkill -f 'next dev' ; true"
+    "stop": "lsof -ti:3000,3001 2>/dev/null | xargs kill -9 2>/dev/null; true",
+    "predev:all": "npm run stop",
+    "test": "tsx --test tests/*.test.ts",
+    "check": "npm run typecheck && npm test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

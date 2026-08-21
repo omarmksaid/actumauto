@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Types + behaviour must both hold before anything reaches Railway, which auto-deploys main.
+# Skip deliberately with: git push --no-verify
+set -e
+echo "pre-push: typecheck + tests…"
+npm run check

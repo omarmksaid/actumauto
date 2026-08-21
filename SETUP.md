@@ -146,6 +146,18 @@ cp .env.local.example .env.local   # (create it — see the web env table below)
 npm install
 npm run dev               # http://localhost:3001
 ```
+### Tests
+
+```bash
+npm test      # behaviour: due engine, guardrails, privacy boundary, timezone maths
+npm run check # typecheck + tests — what the pre-push hook runs
+```
+
+The hook is installed via `git config core.hooksPath .githooks` (already set in this clone; a
+fresh clone needs that one command). Every test covers a bug that actually shipped — repeating
+service intervals, fabricated due dates, customer data leaking into an anonymous prompt, UTC-vs-
+local scheduling.
+
 ### Everything locally
 
 ```bash
