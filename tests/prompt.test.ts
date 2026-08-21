@@ -83,3 +83,39 @@ test("hours and today's date reach the prompt", () => {
   assert.ok(p.includes("Friday, August 21, 2026"), "agent can't resolve 'tomorrow' without today");
   assert.ok(/Sunday: closed/.test(p), "closed days must be stated, not implied");
 });
+
+test("the agent doesn't name the caller's vehicle before knowing what they want", () => {
+  // From a real call: "What can I help you with today for your RAV4?" — asked before the caller
+  // said anything car-related. With one vehicle on file the model reaches for it as a friendly
+  // opener, which tells the caller what their call is about instead of asking.
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "Milpitas Toyota", timezone: "America/Los_Angeles",
+    customerId: "cu", customerName: "Omar Said", customerLanguage: null,
+    vehicles: [{ id: "v1", make: "Toyota", model: "RAV4", year: 2022, vin: null, mileage: 41000, due: null }],
+    offerings: [], transferNumber: "+14085550111", greeting: null, personaTemplate: null,
+    identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", inService: null, matchCount: 1,
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(/Do NOT bring up their vehicle until you know what they want/i.test(p),
+    "nothing stops the agent leading with the car");
+  assert.ok(/never narrow it to one of their vehicles/i.test(p),
+    "the opening question isn't required to be open-ended");
+});
+
+test("a car already in the shop is an explicit exception to that rule", () => {
+  // Someone whose car is being serviced is almost certainly calling about it — staying silent
+  // there would be unhelpful, so the two rules must not read as contradictory.
+  const ctx: InboundContext = {
+    companyId: "c", companyName: "Milpitas Toyota", timezone: "America/Los_Angeles",
+    customerId: "cu", customerName: "Omar Said", customerLanguage: null,
+    vehicles: [{ id: "v1", make: "Toyota", model: "RAV4", year: 2022, vin: null, mileage: 41000, due: null }],
+    offerings: [], transferNumber: "+14085550111", greeting: null, personaTemplate: null,
+    identifyMode: "caller_id_only", agentEnabled: true, businessHours: {},
+    todayLabel: "Friday, August 21, 2026", matchCount: 1,
+    inService: { vehicle: "2022 Toyota RAV4", since: null, ops: ["Oil change"] },
+  };
+  const p = buildInboundSystemPrompt(ctx, "soft");
+  assert.ok(/EXCEPTION to waiting before mentioning their vehicle/i.test(p),
+    "the in-service case doesn't override the wait-to-mention rule");
+});
