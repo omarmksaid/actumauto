@@ -164,8 +164,10 @@ function toolDefinitions(ctx: InboundContext) {
             properties: {
               date: {
                 type: "string",
-                description: "Optional. YYYY-MM-DD, a weekday name, or 'tomorrow'. " +
-                  "Leave it out to get the next available slot.",
+                description: "Optional. Pass the caller's own words: 'friday', 'next friday', " +
+                  "'this thursday', 'tomorrow', 'today'. Only pass YYYY-MM-DD if the caller " +
+                  "actually named a date. Do NOT compute a date from a weekday yourself — you " +
+                  "will get the day wrong. Leave it out to get the next available slot.",
               },
               // Without this the model cannot check a specific time, so it answers "not available"
               // from whatever short sample the previous call returned — on a day that is wide open.
@@ -194,8 +196,9 @@ function toolDefinitions(ctx: InboundContext) {
               preferred_time: { type: "string", description: "Day/time in their words." },
               starts_at: {
                 type: "string",
-                description: "The exact slot as YYYY-MM-DDTHH:MM local, from check_availability. " +
-                  "Include it whenever you know the specific time — it reserves the slot.",
+                description: "The exact ISO timestamp returned by check_availability. Copy it " +
+                  "verbatim from that tool's reply — do NOT construct it from a weekday or " +
+                  "reconstruct the date yourself. Include it whenever you know the specific time.",
               },
               vehicle_id: { type: "string", description: "id from get_my_vehicles." },
               vehicle_confirmed: {

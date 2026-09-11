@@ -389,3 +389,55 @@ test("a summary with nothing to add is not appended", () => {
   assert.ok(/if \(hasExtra && call\.customer_id\)/.test(SRC),
     "the append isn't gated on there being something to add");
 });
+
+test("weekday phrases resolve to the right calendar date", async () => {
+  // From a real call on Friday, September 11, 2026: the model heard "Friday of next week", said
+  // "next Friday, September 19", and booked Sept 19 — a Saturday. The model does the arithmetic
+  // wrong; the server has to do it instead.
+  const { resolveDate } = await import("../src/routes/inbound");
+
+  // Freeze "now" to Friday, 2026-09-11 at 10 AM Pacific. UTC = 17:00.
+  const realNow = Date.now;
+  Date.now = () => new Date("2026-09-11T17:00:00Z").getTime();
+  const OriginalDate = Date;
+  // @ts-expect-error — stub the zero-arg constructor
+  globalThis.Date = class extends OriginalDate {
+    constructor(...args: any[]) {
+      if (args.length === 0) super(Date.now());
+      // @ts-expect-error — forward variadic args to the real constructor
+      else super(...args);
+    }
+  };
+
+  try {
+    const tz = "America/Los_Angeles";
+    // Plain "friday" from a Friday means 7 days out — today is not "up next".
+    assert.equal(resolveDate("friday", tz), "2026-09-18",
+      "'friday' on a Friday should mean the next Friday, not today");
+    // "next friday" from a Friday means TWO Fridays out (skipping this coming one).
+    assert.equal(resolveDate("next friday", tz), "2026-09-18",
+      "'next friday' on a Friday should mean the following Friday, not Saturday");
+    // Same guard, phrased naturally.
+    assert.equal(resolveDate("friday of next week", tz), "2026-09-18",
+      "'friday of next week' should resolve to a Friday, not a Saturday");
+    // "this friday" always means the closest upcoming Friday, even from a Friday.
+    assert.equal(resolveDate("this friday", tz), "2026-09-18",
+      "'this friday' should never wrap past a week");
+    // Sanity: "tomorrow" from Friday is Saturday.
+    assert.equal(resolveDate("tomorrow", tz), "2026-09-12", "tomorrow after Friday is Saturday");
+    // A YYYY-MM-DD input is trusted verbatim.
+    assert.equal(resolveDate("2026-09-19", tz), "2026-09-19", "explicit dates pass through");
+  } finally {
+    globalThis.Date = OriginalDate;
+    Date.now = realNow;
+  }
+});
+
+test("check_availability tells the model to pass phrases, not compute dates", () => {
+  // The model kept passing YYYY-MM-DD it computed itself, skipping resolveDate() entirely.
+  // The tool description has to steer it toward the phrase form.
+  const SRC = readFileSync("src/inbound/assistant.ts", "utf8");
+  assert.ok(/do NOT compute a date from a weekday yourself/i.test(SRC) ||
+    /do NOT construct it from a weekday/i.test(SRC),
+    "the tool schema doesn't warn against the model computing dates");
+});

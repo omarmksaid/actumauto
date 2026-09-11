@@ -344,7 +344,10 @@ function hoursBlock(ctx: InboundContext): string {
 
   lines.push(
     "Never book outside these hours or in the past — name the nearest open time instead.",
-    "You know today's date; work out \"tomorrow\" or \"Friday\" yourself, never ask the caller."
+    "DATES: never compute a weekday-to-date yourself — you will get the day wrong. Pass the",
+    "caller's own words to check_availability instead: 'friday', 'next friday', 'this thursday',",
+    "'tomorrow'. The tool works it out and answers with the actual date, which you then read",
+    "back verbatim. Only pass YYYY-MM-DD if the caller literally said a date."
   );
   return lines.join("\n");
 }

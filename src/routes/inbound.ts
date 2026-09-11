@@ -26,10 +26,17 @@ import { computeDue } from "../scheduling/due";
 import { loadShopConfig, availableSlots, nextAvailableSlots, checkSlot, openWindow, currentlyInService, spokenTime } from "../scheduling/slots";
 
 /**
- * Resolve "friday" / "tomorrow" / "2026-08-22" to a local YYYY-MM-DD in the shop's timezone.
- * Weekday names always mean the NEXT occurrence, which is what a caller means by "Friday".
+ * Resolve "friday" / "next friday" / "tomorrow" / "2026-08-22" to a local YYYY-MM-DD in the
+ * shop's timezone. Weekday names default to the NEXT occurrence, which is what a caller means
+ * by "Friday". "Next friday" adds a week when today is not that weekday (a caller on Monday
+ * saying "next Friday" means this coming Friday) but skips a week when today IS that weekday
+ * (a caller on Friday saying "next Friday" means 7 days out, not today).
+ *
+ * The model kept doing this arithmetic itself and confidently miscounting — announced "next
+ * Friday, September 19" on a call where September 19 was a Saturday. Doing it here is the only
+ * way to stop that.
  */
-function resolveDate(input: string, tz: string): string | null {
+export function resolveDate(input: string, tz: string): string | null {
   const raw = input.toLowerCase().trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
 
@@ -45,8 +52,12 @@ function resolveDate(input: string, tz: string): string | null {
   if (/^tomorrow$/.test(raw)) return local(new Date(now.getTime() + 86400_000));
 
   const NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-  const want = NAMES.findIndex((n) => raw.includes(n.slice(0, 3)) && raw.length <= 14);
+  const want = NAMES.findIndex((n) => raw.includes(n.slice(0, 3)) && raw.length <= 20);
   if (want >= 0) {
+    // "friday", "next friday", "this friday", "friday of next week" — a caller means the next
+    // occurrence. "Next" doesn't add a week in casual speech (a caller on Friday saying "next
+    // Friday" means 7 days out, not 14). Only "today" would map to i=0, and that phrase is
+    // handled above; the loop always starts at i=1 so a weekday name never resolves to today.
     for (let i = 1; i <= 7; i++) {
       const cand = new Date(now.getTime() + i * 86400_000);
       if (dayIndex(cand) === want) return local(cand);
