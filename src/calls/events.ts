@@ -167,7 +167,9 @@ async function storeTranscript(companyId: string, callId: string, customerId: st
   const turns: any[] = Array.isArray(msg.artifact?.messages) ? msg.artifact.messages
     : Array.isArray(msg.messages) ? msg.messages : [];
   const rows = turns
-    .filter((t) => t.role && (t.message || t.content))
+    // Drop Vapi's system turn: it's the entire prompt (guardrails, persona, hours, catalog) which
+    // is not conversation and reads as a wall of internal instructions at the top of the call.
+    .filter((t) => t.role && t.role !== "system" && (t.message || t.content))
     .map((t) => ({
       company_id: companyId, call_id: callId, customer_id: customerId, channel: "voice",
       role: t.role === "bot" || t.role === "assistant" ? "ai" : t.role === "user" ? "customer" : "system",
