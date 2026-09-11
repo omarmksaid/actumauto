@@ -157,13 +157,23 @@ export async function checkSlot(
   return { ok: true };
 }
 
-/** The appointment whose vehicle is in the shop right now, if any. */
+/** The appointment whose vehicle is in the shop right now, if any.
+ *
+ * Ignores stale check-ins. An appointment left in_service that hasn't been touched for a day is
+ * almost always an advisor (or a demo) who never clicked "complete" — not a car that's been sitting
+ * on the lot for a week. Telling a caller their car is in the shop three weeks after a forgotten
+ * demo is worse than saying nothing, so we require a recent check-in.
+ */
+const IN_SERVICE_MAX_AGE_MS = 24 * 60 * 60_000;
+
 export async function currentlyInService(companyId: string, customerId: string) {
+  const freshSince = new Date(Date.now() - IN_SERVICE_MAX_AGE_MS).toISOString();
   const { data } = await supabaseAdmin
     .from("appointments")
     .select("id, starts_at, ends_at, service_ops, status, checked_in_at, vehicles(year, make, model)")
     .eq("company_id", companyId).eq("customer_id", customerId)
     .eq("status", "in_service")
+    .gte("checked_in_at", freshSince)
     .order("checked_in_at", { ascending: false })
     .limit(1).maybeSingle();
   return data ?? null;
